@@ -1,4 +1,4 @@
-import { SwitchCycle } from './core.js';
+import { SwitchCycle, phraseBreaks } from './core.js';
 import { createFivebeatMotion } from './motion.js';
 import { installSwitcherKeyboard } from './keyboard.js';
 
@@ -48,23 +48,28 @@ export function mountSwitcher(container, host) {
     if (!cycle || !overlay) return;
     // Deletion or archiving cancels the frozen selection instead of opening a stale target.
     if (cycle.ids.some(id => !host.exists(id))) { finish(false); return; }
-    const theme = host.theme(), current = host.current();
+    const theme = host.theme(), current = host.current(), retitled = [];
     if (overlay.dataset.theme !== theme) overlay.dataset.theme = theme;
     for (const id of cycle.ids) {
-      const row = host.row(id), node = rows.get(id), old = node.value || {};
-      const label = `${row.workspaceName}，${row.title}，${row.label}${id === current ? '，当前会话' : ''}`;
+      const row = host.row(id), node = rows.get(id), old = node.value || {}, here = id === current;
+      const label = `${row.workspaceName}，${row.title}，${row.label}${here ? '，当前会话' : ''}`;
       const text = row.text || row.placeholder || '', shortLabel = row.shortLabel || row.label;
       if (node.label !== label) { node.card.setAttribute('aria-label', label); node.label = label; }
-      if (row.workspaceName !== old.workspaceName) { node.project.textContent = row.workspaceName; node.project.title = row.workspaceName; }
+      if (node.here !== here) { node.card.dataset.current = String(here); node.here = here; }
+      if (row.workspaceName !== old.workspaceName) { node.projectName.textContent = row.workspaceName; node.project.title = row.workspaceName; }
       if (text !== (old.text || old.placeholder || '')) { node.excerpt.textContent = text; node.excerpt.title = text; }
       if (!node.value || !!row.text !== !!old.text) node.excerpt.dataset.empty = String(!row.text);
-      if (row.title !== old.title) { node.title.textContent = row.title; node.title.title = row.title; }
+      if (row.title !== old.title) { node.title.textContent = phraseBreaks(row.title); node.title.title = row.title; retitled.push(node.title); }
       if (row.kind !== old.kind) { node.status.dataset.status = row.kind; node.icon.dataset.status = row.kind; }
       if (row.label !== old.label) { node.status.title = row.label; node.icon.title = row.label; }
       if (shortLabel !== (old.shortLabel || old.label)) node.statusLabel.textContent = shortLabel;
       if (row.kind !== old.kind || row.draft !== old.draft) node.motion.update(row.kind, row.draft);
       node.value = row;
     }
+    // Balancing keeps the line count, so one read pass after all writes decides
+    // which new titles fit their two lines; clamped ones keep full-width lines.
+    const fits = retitled.map(title => title.scrollHeight <= title.clientHeight);
+    retitled.forEach((title, index) => { title.dataset.balance = String(fits[index]); });
     renderSelection();
   }
   function scheduleRefresh() {
@@ -110,13 +115,16 @@ export function mountSwitcher(container, host) {
     ids.forEach((id, index) => {
       const card = document.createElement('div'); card.className = 'dsh-switcher-card'; card.id = `dsh-switcher-option-${index}`; card.setAttribute('role', 'option'); card.setAttribute('aria-selected', 'false');
       const project = document.createElement('span'); project.className = 'dsh-switcher-project';
+      const projectName = document.createElement('span'); projectName.className = 'dsh-switcher-project-name';
+      const here = document.createElement('span'); here.className = 'dsh-switcher-here'; here.textContent = '当前';
+      project.append(projectName, here);
       const title = document.createElement('span'); title.className = 'dsh-switcher-title';
       const status = document.createElement('div'); status.className = 'dsh-switcher-status';
       const icon = document.createElement('span'); icon.className = 'dsh-switcher-icon'; icon.setAttribute('aria-hidden', 'true');
       const statusLabel = document.createElement('span'); statusLabel.className = 'dsh-switcher-status-label';
       const excerpt = document.createElement('p'); excerpt.className = 'dsh-switcher-excerpt';
       status.append(icon, statusLabel); card.append(project, title, status, excerpt); list.append(card);
-      rows.set(id, { card, project, title, status, statusLabel, excerpt, icon, motion: { update() {} } });
+      rows.set(id, { card, project, projectName, title, status, statusLabel, excerpt, icon, motion: { update() {} } });
       // Pointer movement selects, without a stale hover overriding keyboard navigation.
       card.addEventListener('pointermove', event => {
         if (cycle && cycle.selected !== id && (event.movementX || event.movementY)) { cycle.select(id); renderSelection(); }

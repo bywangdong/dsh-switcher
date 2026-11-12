@@ -7,6 +7,7 @@
 | 用途 | 来源 |
 | --- | --- |
 | 会话标题、最近活动、空白判断 | `sessions.list` |
+| 空闲状态行的最近更新时间 | `sessions.list.byId[id].updatedAt`，接受 ISO 字符串、毫秒或秒；0.1.10 起使用，客户端快照里的实际格式未在宿主核对 |
 | 当前会话 | `sidebarRight.mounted` |
 | 项目名称与归属 | `workspaces.list.items[].title / sessionIds`；未分组回退 `sessions.list.byId[id].cwd` 目录名 |
 | 归档排除 | `workspaces.list.archivedSessionIds` |
@@ -103,3 +104,11 @@
 - 19 项测试、语法/资源检查和构建通过；正式 HTTP fixture 的明暗、480px 窄窗、键盘循环、移动恢复、重开、Ctrl 点击及卸载共 10 项操作检查通过，详见 [验证记录](reviews/2026-10-19-pointer/README.md)。
 - 官方 CLI 已安装 0.1.8，5 个包内文件一致；客户端 SHA-256：`086797bf3452f285f4f57672db141a12e930a36f68d13504e92d25aa3f90e1f2`。真实 DSH Ctrl+Tab 唤起、Esc 取消与原会话保留通过。
 - 光标可见性不能从原生可访问树确认，本轮未把浏览器的光标验证称为原生验证。其他依赖、宿主配置和应用包保持一致，回退仅重装 0.1.7。
+
+## 0.1.9 · 材质与焦点精修安装 · 2026-10-24
+
+- 保留 01「分签」、942×190 / 182×158 和完整 11 图标，只更新表面、边线、阴影与选中过渡。浏览器证据和量值见 [精修记录](reviews/2026-10-24-edge-refinement/README.md)。
+- `npm run check`（134 个脚本、298 个引用）、19 项测试、构建和 `npm run pack:local` 通过；安装包 5 个文件，17.6 kB。
+- 通过应用内置 CLI（0.2.1-rc.2）执行 `plugin --profile desktop add .../dsh-switcher-0.1.9.tgz --offline --ignore-scripts`，日常 `desktop` profile 从 0.1.8 更新到 0.1.9。安装目录 5 个文件与 tgz 解包内容逐字节一致；客户端 SHA-256：`0b34f2f1b467c69bbbace00f2ae3fe261dace79c41e658d3acb6bf6ebfe5399d`。profile 的 `package.json` 与 `pnpm-lock.yaml` 指向 0.1.9 包，属于预期变化。
+- 更新前完整备份到 `.switcher-backups/20261024-084640-before-0.1.9-refinement`。`cordis.yml`、`cordis.patch.yml`、`pnpm-workspace.yaml` 与备份哈希一致；其他依赖和应用包未重装。回退时只重装备份中的 0.1.8 Switcher 包，或重新添加 0.1.8 tgz。
+- 安装成功只证明文件与版本更新；真实 DSH 中的最终材质和 Ctrl+Tab 体验待用户实际查看确认，不能由浏览器 fixture 代替。

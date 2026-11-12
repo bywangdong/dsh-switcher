@@ -1,0 +1,44 @@
+/* Study-only placement overrides. The selected family 11 geometry is reused. */
+.intro { padding: 32px 0 24px; }
+.history-link { font-size: 12px; color: var(--secondary); }
+.stage { height: 280px; }
+.variant-heading { padding: 19px 0 12px; }
+.variant-heading h2 { font-size: 19px; }
+.variant-heading .verdict { font-size: 12px; }
+.recommendation { font-size: 13px; color: var(--secondary); line-height: 1.8; margin: 12px 0 18px; }
+.motion-control { flex-direction: row; align-items: center; gap: 6px; }
+.key { border-top: 1px solid var(--line); padding: 15px 0; font-size: 12px; color: var(--secondary); }
+.key summary { width: fit-content; cursor: pointer; }
+#legend { display: flex; flex-wrap: wrap; gap: 18px 28px; padding-top: 20px; }
+.legend-entry { display: flex; align-items: center; gap: 8px; }
+.legend-entry small { display: block; margin-top: 3px; font-size: 11px; color: var(--secondary); }
+.legend-icon { --sw-faint: var(--secondary); --sw-blue: #55749c; --sw-amber: #967747; }
+body[data-theme=dark] .legend-icon { --sw-blue: #9db7d8; --sw-amber: #d3b684; }
+.recognition-switcher[data-signal-placement]:not([data-signal-placement=original]) .recognition-status-label { display: none; }
+.recognition-switcher[data-tab][data-signal-placement]:not([data-signal-placement=original]) .recognition-card {
+  grid-template-rows: 23px minmax(0, 1fr) 32px; row-gap: 9px;
+}
+.recognition-switcher[data-tab][data-signal-placement]:not([data-signal-placement=original]) .recognition-note {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  white-space: normal; overflow-wrap: anywhere; max-height: 32px;
+}
+.recognition-switcher[data-tab][data-signal-placement=corner] .recognition-card {
+  grid-template-columns: minmax(0, 1fr) 20px; column-gap: 8px;
+  grid-template-areas: 'project project' 'title title' 'note status';
+}
+.recognition-switcher[data-tab][data-signal-placement=corner] .recognition-status {
+  justify-self: end; align-self: end; width: 20px;
+}
+.recognition-switcher[data-tab][data-signal-placement=inline] .recognition-card {
+  grid-template-columns: 20px minmax(0, 1fr); column-gap: 6px;
+  grid-template-areas: 'project project' 'status title' 'note note';
+}
+.recognition-switcher[data-tab][data-signal-placement=inline] .recognition-status { align-self: start; }
+.recognition-switcher[data-signal-placement] .recognition-status .dsh-switcher-icon { margin-left: 0; }
+@media (max-width: 680px) {
+  .toolbar { flex-wrap: wrap; }
+  .toolbar-end { width: 100%; justify-content: space-between; }
+  .variant-heading > div:first-child { flex-wrap: wrap; gap: 7px; }
+  .variant-heading .verdict { margin-left: 0; }
+  .stage { height: 252px; }
+}

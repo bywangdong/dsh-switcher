@@ -9,7 +9,17 @@ const data = [
   { id: 'e', title: '一念 · 快速记录交互', text: '打开就能写，历史记录也要容易找到。', kind: 'unread', label: '有新结果' },
 ];
 const projects = ['dsh-shortcutter', 'proxyAutoSwitch', 'dsh-shortcutter', 'dsh-switcher', 'Trice'];
-data.forEach((row, i) => { row.workspaceName = projects[i]; row.placeholder = '还没有输入'; });
+// Minutes since each sample was last updated; idle cards show this instead of a constant label.
+const ages = [0, 12, 185, 26 * 60, 9 * 24 * 60];
+data.forEach((row, i) => { row.workspaceName = projects[i]; row.placeholder = '还没有输入'; row.updatedAt = new Date(Date.now() - ages[i] * 60000).toISOString(); });
+if (params.get('scene') === 'quiet') {
+  // The everyday case: one shared project, nothing running. Titles cover a one-character
+  // orphan (11 CJK characters), mixed scripts, a short line and one that needs clamping.
+  const titles = ['整理本周的发布检查清单', '键盘导航态的按键选择', '梳理安装与回退流程里的备份点', '在窄窗口里验证 Scroll 行为',
+    '统一多个工作区的会话焦点与键盘导航体验并补充回归验证记录'];
+  data.forEach((row, i) => Object.assign(row, { kind: 'idle', label: '会话已就绪', draft: false, title: titles[i],
+    workspaceName: i === 2 ? 'dsh-shortcutter' : 'Agent' }));
+}
 if (params.get('scene') === 'real') {
   try {
     const response = await fetch('./design-lab/private/codex-conversations.json', { cache: 'no-store' });
@@ -38,7 +48,7 @@ const host = {
   row(id) {
     const row = data.find(row => row.id === id);
     return { ...row, ...sessionPresentation({ running: row.kind === 'running', completionUnread: row.kind === 'unread',
-      pendingInteraction: row.kind === 'approval' ? { kind: 'approval' } : undefined }, {}, row.draft) };
+      pendingInteraction: row.kind === 'approval' ? { kind: 'approval' } : undefined }, { updatedAt: row.updatedAt }, row.draft) };
   }, preview: () => () => {},
   subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
   open(id) { current = id; history = remember(history, id); document.getElementById('current').textContent = `当前：${host.row(id).title}`; publish(); },
