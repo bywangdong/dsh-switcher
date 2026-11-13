@@ -131,3 +131,75 @@ export function sessionPresentation(status, summary, draft = false, now = Date.n
   if (draft && kind !== 'draft') { label += '，有草稿'; shortLabel += ' · 有草稿'; }
   return { kind, label, shortLabel, draft };
 }
+
+export const PREFS_KEY = 'dsh-switcher.prefs.v1';
+
+export const EDITION_OPTIONS = [
+  { id: 'kibutsu', label: '02 器物', badge: '默认', detail: '136px 凝练比例 · 状态 → 标题 → 项目胶囊 · 活跃态右侧微点，省去最后输入' },
+  { id: 'sujian', label: '01 素笺', detail: '158px 舒展留白 · 状态 → 标题 → 项目胶囊 · 省去最后输入' },
+  { id: 'jiechi', label: '03 界尺', detail: '138px 无框竖线分界 · 唯选中列浮现底面 · 状态领读' },
+  { id: 'moyun', label: '04 墨韵', detail: '138px 活跃状态淡底胶囊 · 底部无框项目微标，不同卡双胶囊' },
+  { id: 'b2', label: 'B2 轻胶囊', detail: '158px 统一中性项目胶囊 · 保留四行「项目 → 标题 → 状态 → 最后输入」' },
+  { id: 'split', label: '01 分签', detail: '158px 经典顶栏题签 · 含「当前」标记与最后输入' },
+];
+
+export const MOTION_OPTIONS = [
+  { id: 'balanced', label: '动静异律', badge: '默认', detail: '选中框 160ms 滑动 · 运行中五拍流光波 · 待确认静止括弧配 2.6s 慢呼吸光标' },
+  { id: 'running-only', label: '仅运行动', detail: '选中框滑动 · 仅「运行中」波动，待确认/待回应保持纯静态高对比' },
+  { id: 'orbital', label: '转弧双动', detail: '选中框滑动 · 运行中旋转追尾圆弧 + 待确认 1.45s 括弧与微点脉冲' },
+  { id: 'classic', label: '原版五拍', detail: '保留原版五拍波形与卡片淡入过渡，不启用滑动选中底框' },
+  { id: 'off', label: '全静', detail: '关闭所有状态图标循环与切换滑动过渡' },
+];
+
+export const DEFAULT_PREFS = Object.freeze({ edition: 'kibutsu', motion: 'balanced' });
+
+const EDITION_IDS = new Set(EDITION_OPTIONS.map(option => option.id));
+const MOTION_IDS = new Set(MOTION_OPTIONS.map(option => option.id));
+
+export function normalizePrefs(input) {
+  const value = input && typeof input === 'object' ? input : {};
+  return {
+    edition: EDITION_IDS.has(value.edition) ? value.edition : DEFAULT_PREFS.edition,
+    motion: MOTION_IDS.has(value.motion) ? value.motion : DEFAULT_PREFS.motion,
+  };
+}
+
+export function readPrefs(raw) {
+  if (typeof raw !== 'string' || !raw) return { ...DEFAULT_PREFS };
+  try { return normalizePrefs(JSON.parse(raw)); } catch { return { ...DEFAULT_PREFS }; }
+}
+
+export function isStatusFirstEdition(edition) {
+  return edition !== 'b2' && edition !== 'split';
+}
+
+export function usesLensMotion(edition, motion) {
+  return Boolean(edition) && motion !== 'classic' && motion !== 'off';
+}
+
+export function createPrefsStore(storage) {
+  let state = { ...DEFAULT_PREFS };
+  try { state = readPrefs(storage?.getItem(PREFS_KEY)); } catch { /* Storage may be restricted. */ }
+  const listeners = new Set();
+  const notify = () => { for (const listener of [...listeners]) listener(state); };
+  return {
+    getSnapshot: () => state,
+    update(patch) {
+      const next = normalizePrefs({ ...state, ...patch });
+      if (next.edition === state.edition && next.motion === state.motion) return state;
+      state = next;
+      try { storage?.setItem(PREFS_KEY, JSON.stringify(state)); } catch { /* Memory fallback stays live. */ }
+      notify();
+      return state;
+    },
+    reset() { return this.update(DEFAULT_PREFS); },
+    sync() {
+      let next = state;
+      try { next = readPrefs(storage?.getItem(PREFS_KEY)); } catch { return state; }
+      if (next.edition === state.edition && next.motion === state.motion) return state;
+      state = next; notify();
+      return state;
+    },
+    subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+  };
+}

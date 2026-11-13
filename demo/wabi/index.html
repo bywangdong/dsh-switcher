@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DSH Switcher · 状态优先重构（DSH 原生配色）</title>
+  <link rel="stylesheet" href="../../src/plugin/switcher.css">
+  <link rel="stylesheet" href="wabi.css">
+</head>
+<body data-theme="dark" data-view="wall" data-edition="kibutsu">
+  <div class="immersive-backdrop" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="topbar-brand">
+      <strong>DSH Switcher</strong>
+      <span>状态 → 标题 → 项目 · DSH 原生配色</span>
+      <a class="nav-jump" href="../grouping/">← 已存 B2 胶囊稿</a>
+    </div>
+
+    <div class="topbar-controls">
+      <div class="seg" role="group" aria-label="查看方式">
+        <button type="button" data-view="wall" aria-pressed="true">4 版同屏细看</button>
+        <button type="button" data-view="single" aria-pressed="false">实景沉浸体验</button>
+      </div>
+
+      <div class="seg" id="edition-picker" role="group" aria-label="设计版本" hidden>
+        <button type="button" data-edition="sujian" aria-pressed="false">01 素笺 · 158留白</button>
+        <button type="button" data-edition="kibutsu" aria-pressed="true">02 器物 · 136凝练</button>
+        <button type="button" data-edition="jiechi" aria-pressed="false">03 界尺 · 无框竖丝</button>
+        <button type="button" data-edition="moyun" aria-pressed="false">04 墨韵 · 动静淡染</button>
+      </div>
+
+      <div class="seg" role="group" aria-label="明暗外观">
+        <button type="button" data-theme="light" aria-pressed="false">亮色</button>
+        <button type="button" data-theme="dark" aria-pressed="true">暗色</button>
+      </div>
+
+      <div class="seg" role="group" aria-label="动效分寸">
+        <button type="button" data-icon-motion="balanced" aria-pressed="true" title="运行中：五拍错相波；待确认/待回应：外框静止 + 2.6s 慢呼吸光标；其余静止">动静异律 · 主推</button>
+        <button type="button" data-icon-motion="running-only" aria-pressed="false" title="仅运行中波动；待确认/待回应保持纯静态琥珀符号">仅运行动</button>
+        <button type="button" data-icon-motion="orbital" aria-pressed="false" title="运行中旋转圆弧 + 待确认快脉冲（对照检验多卡并发时是否抢焦点）">转弧双动</button>
+        <button type="button" data-icon-motion="off" aria-pressed="false" title="关闭全部图标与选中框过渡">全静</button>
+      </div>
+
+      <button type="button" id="simulate" class="sim-btn" aria-pressed="false">模拟状态变化</button>
+
+      <label class="scene-select">
+        <span>情境</span>
+        <select id="scene" aria-label="会话情境">
+          <option value="mixed">日常实景 · 动静并存（运行 / 待确认 / 空闲）</option>
+          <option value="busy">并发压力 · 2 运行 + 2 待输入（检验焦点竞争）</option>
+          <option value="quiet">全员静默（5 个均空闲 · 考验耐看度）</option>
+          <option value="stress">长名称与多项目并存（截断与留白边界）</option>
+        </select>
+      </label>
+    </div>
+  </header>
+
+  <main class="wabi-wall" id="wall-stage">
+    <header class="manifesto">
+      <div class="manifesto-order">
+        <span><b>01</b> 状态先行（动静之眼）</span>
+        <i>→</i>
+        <span><b>02</b> 标题居中（事之主体 + 余白）</span>
+        <i>→</i>
+        <span><b>03</b> 项目落款（中性轻胶囊归属）</span>
+        <del>最后一次输入（已移除）</del>
+      </div>
+      <p>配色直接取自 DSH 本体：近乎无彩的中性灰（暗 #151517 / #27282a，亮 #e7e8e9 / #fafbfc）与 DSH 主题蓝。空闲会话退为灰色，只有运行、新结果（DSH 蓝）和待确认（琥珀）带颜色。</p>
+      <p>动效分寸：主推「动静异律」让<b>运行中</b>走柔和错相五拍波（行进态），让<b>待确认/待回应</b>保持外框静止、仅内部光标做 2.6s 慢呼吸（暂停等你态），互不撞频也不抢标题视线；可切换至「并发压力（2 运行 + 2 待输入）」对比「仅运行动」与「转弧双动」。按 ← → 预览选中框滑动。</p>
+    </header>
+
+    <div id="wall-list" class="wall-list"></div>
+  </main>
+
+  <section class="immersive-stage" id="single-stage" hidden aria-label="实景沉浸预览">
+    <div class="single-caption">
+      <span class="edition-pill" id="single-badge"></span>
+      <p id="single-desc"></p>
+    </div>
+    <div id="mount-single" class="immersive-mount"></div>
+    <div class="immersive-hud">
+      <span id="single-status"></span>
+      <span class="hud-sep" aria-hidden="true">·</span>
+      <span>← → 切换焦点</span>
+      <button type="button" id="hold-b2" class="hold-btn" aria-pressed="false">按住对比已保存 B2 稿（或按住空格）</button>
+    </div>
+  </section>
+
+  <script type="module" src="wabi.js"></script>
+</body>
+</html>

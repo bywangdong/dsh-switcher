@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DSH Switcher · 字体与细节精修对照</title>
+  <link rel="stylesheet" href="../../src/plugin/switcher.css">
+  <link rel="stylesheet" href="typography.css">
+</head>
+<body data-theme="dark" data-view="split" data-variant="crisp">
+  <div class="immersive-backdrop" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="topbar-brand">
+      <strong>DSH Switcher</strong>
+      <span>字体与细节精修对照</span>
+      <a class="nav-jump" href="../grouping/" style="font-size:11.5px;padding:2px 8px;border-radius:6px;background:var(--ui-tag-ref);color:var(--ui-accent);text-decoration:none;margin-left:4px;">分组表现 5 版探索 →</a>
+    </div>
+
+    <div class="topbar-controls">
+      <div class="seg" role="group" aria-label="精修方案">
+        <button type="button" data-variant="crisp" aria-pressed="true">A · 清朗 400→500<em>推荐</em></button>
+        <button type="button" data-variant="medium" aria-pressed="false">B · 凝练 500 恒重</button>
+        <button type="button" data-variant="airy" aria-pressed="false">C · 精密 13.5px + 清透亮选</button>
+      </div>
+
+      <div class="seg" role="group" aria-label="查看模式">
+        <button type="button" data-view="split" aria-pressed="true">同屏直比</button>
+        <button type="button" data-view="immersive" aria-pressed="false">实景单版</button>
+      </div>
+
+      <div class="seg" role="group" aria-label="明暗主题">
+        <button type="button" data-theme="light" aria-pressed="false">亮色</button>
+        <button type="button" data-theme="dark" aria-pressed="true">暗色</button>
+      </div>
+
+      <label class="scene-select">
+        <span>场景</span>
+        <select id="scene" aria-label="验证场景">
+          <option value="everyday">日常会话（复现截图特征）</option>
+          <option value="states">五种状态（运行 / 待确认 / 草稿）</option>
+          <option value="stress">长标题与截断提示验证</option>
+        </select>
+      </label>
+    </div>
+  </header>
+
+  <main class="workspace-compare" id="split-stage">
+    <section class="compare-lane" aria-label="当前正式版 0.1.10">
+      <div class="lane-meta">
+        <span class="lane-tag is-baseline">当前 0.1.10 原版</span>
+        <p>标题 <code>15px / 550</code>（中文吸附至 <code>600 Semibold</code>）· 负字距 <code>-0.12px</code> · <code>text-wrap: balance</code> 强拆短句 · 全元素无条件弹原生 <code>title</code></p>
+      </div>
+      <div class="stage-box">
+        <div class="stage-bg" aria-hidden="true"></div>
+        <div id="mount-baseline" class="stage-mount"></div>
+      </div>
+    </section>
+
+    <section class="compare-lane" aria-label="字体与细节精修方案">
+      <div class="lane-meta">
+        <span class="lane-tag is-refined" id="refined-badge">A · 清朗 400→500（推荐）</span>
+        <p id="refined-desc"></p>
+      </div>
+      <div class="stage-box">
+        <div class="stage-bg" aria-hidden="true"></div>
+        <div id="mount-refined" class="stage-mount"></div>
+      </div>
+    </section>
+
+    <section class="notes-grid" aria-label="核心差异说明">
+      <div class="note-item">
+        <h3>1. 避开苹方 600 粗黑跳档</h3>
+        <p>macOS 下 PingFang SC 无 550 字重，原版 <code>550</code> 会整档跳成 <code>600 Semibold</code>。降回 <code>400 / 500</code> 后，多笔画汉字字怀立刻通透，与后方 DSH 正文气质一致。</p>
+      </div>
+      <div class="note-item">
+        <h3>2. 14px + 零字距 + 自然满行</h3>
+        <p>净宽 <code>156px</code> 下改为 <code>14px</code> 可完整容纳 11 个汉字；去掉 <code>balance</code> 后不再把 11 字标题切成 <code>5+6</code> 半截短行，五张卡右缘更规整。</p>
+      </div>
+      <div class="note-item">
+        <h3>3. 拉开底部两行与题签主次</h3>
+        <p>题签项目名降重退后，弱化表头横线；状态行启用 <code>tabular-nums</code> 等宽数字，底部原话单独再降半档明度，不再与时间糊成一团。</p>
+      </div>
+      <div class="note-item">
+        <h3>4. 消除原生 Tooltip 穿帮</h3>
+        <p>可把鼠标停在第 2 张卡标题对比：原版会弹出系统默认灰框遮挡卡片；精修版<strong>仅在文字真正发生省略截断时</strong>才挂载 <code>title</code>。</p>
+      </div>
+    </section>
+  </main>
+
+  <section class="immersive-stage" id="immersive-stage" hidden aria-label="实景单版预览">
+    <div id="mount-immersive" class="immersive-mount"></div>
+    <div class="immersive-hud">
+      <span id="immersive-status">当前预览：A · 清朗 400→500</span>
+      <span class="hud-sep" aria-hidden="true">·</span>
+      <span>方向键或点击卡片切换选中项</span>
+      <button type="button" id="hold-baseline" class="hold-btn" aria-pressed="false">按住看 0.1.10 原版（或按住空格）</button>
+    </div>
+  </section>
+
+  <script type="module" src="typography.js"></script>
+</body>
+</html>

@@ -17,6 +17,7 @@
 | 切换动作 | `uiWorkspace.openSession(id)` |
 | 桌面快捷键 | 主文档捕获 `keydown` / `keyup`，同一事件链处理完整手势 |
 | 浮层 | `slots` 的 `shell.overlay` |
+| 插件详情页配置面板 | `slots` 的 `plugins.bundle.config`（`key: 'dsh-switcher'`），偏好存本机 `localStorage`（`dsh-switcher.prefs.v1`） |
 | 明暗主题 | `theme.getTheme()` 与 `theme/change` |
 
 只保留预览中的会话；当前会话借用宿主引用。关闭和卸载释放自己的引用，不释放宿主引用。候选顺序在一次切换期间冻结，实时更新标题和状态；删除或归档候选会取消当前切换。
@@ -112,3 +113,10 @@
 - 通过应用内置 CLI（0.2.1-rc.2）执行 `plugin --profile desktop add .../dsh-switcher-0.1.9.tgz --offline --ignore-scripts`，日常 `desktop` profile 从 0.1.8 更新到 0.1.9。安装目录 5 个文件与 tgz 解包内容逐字节一致；客户端 SHA-256：`0b34f2f1b467c69bbbace00f2ae3fe261dace79c41e658d3acb6bf6ebfe5399d`。profile 的 `package.json` 与 `pnpm-lock.yaml` 指向 0.1.9 包，属于预期变化。
 - 更新前完整备份到 `.switcher-backups/20261024-084640-before-0.1.9-refinement`。`cordis.yml`、`cordis.patch.yml`、`pnpm-workspace.yaml` 与备份哈希一致；其他依赖和应用包未重装。回退时只重装备份中的 0.1.8 Switcher 包，或重新添加 0.1.8 tgz。
 - 安装成功只证明文件与版本更新；真实 DSH 中的最终材质和 Ctrl+Tab 体验待用户实际查看确认，不能由浏览器 fixture 代替。
+
+## 0.1.11 · 多版式与动效配置开关 · 2026-11-13
+
+- 新增 `src/plugin/settings.js`，通过 `ctx.slots.inject('plugins.bundle.config', ...)` 注册 `{ name: 'plugins.bundle.config', key: 'dsh-switcher' }` 配置卡片（含内置实时样例预览与唤起真实会话浮层按钮），不改动 `package.json` 的 `dsh.client.inject` 依赖列表，不阻塞无插件管理页的受限环境。
+- `src/plugin/view.js`、`src/plugin/motion.js` 与 `src/plugin/switcher.css` 支持 6 套版式（默认 `kibutsu` 02 器物，及 `sujian` 01 素笺、`jiechi` 03 界尺、`moyun` 04 墨韵、`b2` 轻胶囊、`split` 01 分签）与 5 套动效模式（默认 `balanced` 动静异律，及 `running-only`、`orbital`、`classic`、`off`），偏好持久化于 `localStorage`（`dsh-switcher.prefs.v1`）并跨窗口同步。
+- 0.1.10 的 `01 分签` 样式快照归档于 `design/archive/session-split-0.1.10/`；过渡稿 `B2` 归档于 `design/archive/session-unified-pill/`；字体、分组与状态优先研究页分别保留在 `demo/typography/`、`demo/grouping/`、`demo/wabi/`。
+- 本轮完成构建、单元测试、语法与本地引用检查、`npm run test:install` Git/tarball 安装验证及浏览器 fixture 明暗/窄窗验证，并推送 `main` 供用户在真实 DSH 中安装体验；浏览器验证不代替真实 DSH 原生体验。

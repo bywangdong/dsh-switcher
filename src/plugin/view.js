@@ -1,17 +1,32 @@
-import { SwitchCycle, phraseBreaks } from './core.js';
+import { SwitchCycle, phraseBreaks, normalizePrefs, isStatusFirstEdition, usesLensMotion } from './core.js';
 import { createFivebeatMotion } from './motion.js';
 import { installSwitcherKeyboard } from './keyboard.js';
 
-export function mountSwitcher(container, host) {
-  let cycle, overlay, list, motion, timer, returnFocus, returnSelection, resize, selectedId, releasePreview = () => {};
-  let composing = false, alive = true, simulated = false, refreshFrame = 0, viewportWidth = 0, scrollPosition = 0;
+export function mountSwitcher(container, host, options = {}) {
+  const inline = Boolean(options.inline);
+  const reducedMotion = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
+  let cycle, overlay, list, lens, motion, timer, returnFocus, returnSelection, resize, selectedId, releasePreview = () => {};
+  let prefs = normalizePrefs(host.prefs?.());
+  let composing = false, alive = true, simulated = false, refreshFrame = 0, viewportWidth = 0, scrollPosition = 0, prevLensIndex = -1;
   const rows = new Map(), stops = [];
-  function listen(target, name, listener, options) {
-    target.addEventListener(name, listener, options);
-    stops.push(() => target.removeEventListener(name, listener, options));
+
+  function listen(target, name, listener, eventOptions) {
+    target.addEventListener(name, listener, eventOptions);
+    stops.push(() => target.removeEventListener(name, listener, eventOptions));
   }
+
+  function createFolderIcon() {
+    const ns = 'http://www.w3.org/2000/svg';
+    const wrap = document.createElement('span'); wrap.className = 'dsh-ws-icon'; wrap.setAttribute('aria-hidden', 'true');
+    const svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox', '0 0 16 16');
+    const path = document.createElementNS(ns, 'path');
+    path.setAttribute('d', 'M2.2 4.6a1.4 1.4 0 0 1 1.4-1.4h2.5l1.35 1.45H12.4a1.4 1.4 0 0 1 1.4 1.4v5.3a1.4 1.4 0 0 1-1.4 1.4H3.6a1.4 1.4 0 0 1-1.4-1.4Z');
+    svg.append(path); wrap.append(svg);
+    return wrap;
+  }
+
   function restoreFocus() {
-    if (!returnFocus?.isConnected) return;
+    if (inline || !returnFocus?.isConnected) return;
     returnFocus.focus({ preventScroll: true });
     try {
       if (returnSelection?.range) {
@@ -19,151 +34,322 @@ export function mountSwitcher(container, host) {
       } else if (returnSelection) returnFocus.setSelectionRange(returnSelection.start, returnSelection.end, returnSelection.direction);
     } catch { /* Host may have replaced the composer while we were open. */ }
   }
+
   function finish(commit, restore = true) {
     if (!cycle) return;
     const selected = cycle.selected, original = host.current();
     const release = releasePreview;
     cycle = undefined; clearTimeout(timer); cancelAnimationFrame(refreshFrame); refreshFrame = 0; releasePreview = () => {};
-    resize?.disconnect(); resize = undefined; selectedId = undefined;
-    motion?.destroy(); motion = undefined; overlay?.remove(); overlay = undefined; list = undefined; rows.clear();
+    resize?.disconnect(); resize = undefined; selectedId = undefined; prevLensIndex = -1;
+    motion?.destroy(); motion = undefined; overlay?.remove(); overlay = undefined; list = undefined; lens = undefined; rows.clear();
     try {
-      if (commit && selected !== original && host.exists(selected)) {
+      if (!inline && commit && selected !== original && host.exists(selected)) {
         try { host.open(selected); } catch (error) { console.error('[DSH Switcher] Could not open session', error); if (restore) restoreFocus(); }
-      } else if (restore) restoreFocus();
+      } else if (!inline && restore) restoreFocus();
     } finally {
       // Hand off to the destination before dropping its preview reference.
       try { release(); } finally { returnFocus = undefined; returnSelection = undefined; }
     }
   }
-  function renderSelection() {
-    if (!cycle || !list || cycle.selected === selectedId) return;
-    rows.get(selectedId)?.card.setAttribute('aria-selected', 'false');
-    selectedId = cycle.selected;
-    const card = rows.get(selectedId).card;
-    card.setAttribute('aria-selected', 'true');
-    list.setAttribute('aria-activedescendant', card.id);
+
+  function applyPrefsAttributes() {
+    if (!overlay) return;
+    overlay.dataset.edition = prefs.edition;
+    overlay.dataset.motion = prefs.motion;
+    if (usesLensMotion(prefs.edition, prefs.motion)) overlay.dataset.lens = 'true';
+    else delete overlay.dataset.lens;
   }
-  function refresh() {
-    cancelAnimationFrame(refreshFrame); refreshFrame = 0;
-    if (!cycle || !overlay) return;
-    // Deletion or archiving cancels the frozen selection instead of opening a stale target.
-    if (cycle.ids.some(id => !host.exists(id))) { finish(false); return; }
-    const theme = host.theme(), current = host.current(), retitled = [];
-    if (overlay.dataset.theme !== theme) overlay.dataset.theme = theme;
-    for (const id of cycle.ids) {
-      const row = host.row(id), node = rows.get(id), old = node.value || {}, here = id === current;
-      const label = `${row.workspaceName}，${row.title}，${row.label}${here ? '，当前会话' : ''}`;
-      const text = row.text || row.placeholder || '', shortLabel = row.shortLabel || row.label;
-      if (node.label !== label) { node.card.setAttribute('aria-label', label); node.label = label; }
-      if (node.here !== here) { node.card.dataset.current = String(here); node.here = here; }
-      if (row.workspaceName !== old.workspaceName) { node.projectName.textContent = row.workspaceName; node.project.title = row.workspaceName; }
-      if (text !== (old.text || old.placeholder || '')) { node.excerpt.textContent = text; node.excerpt.title = text; }
-      if (!node.value || !!row.text !== !!old.text) node.excerpt.dataset.empty = String(!row.text);
-      if (row.title !== old.title) { node.title.textContent = phraseBreaks(row.title); node.title.title = row.title; retitled.push(node.title); }
-      if (row.kind !== old.kind) { node.status.dataset.status = row.kind; node.icon.dataset.status = row.kind; }
-      if (row.label !== old.label) { node.status.title = row.label; node.icon.title = row.label; }
-      if (shortLabel !== (old.shortLabel || old.label)) node.statusLabel.textContent = shortLabel;
-      if (row.kind !== old.kind || row.draft !== old.draft) node.motion.update(row.kind, row.draft);
-      node.value = row;
+
+  function syncLens(immediate = false) {
+    if (!cycle || !lens || !overlay) return;
+    const nextIndex = cycle.index;
+    const wrapped = cycle.ids.length > 2 && prevLensIndex >= 0 && Math.abs(nextIndex - prevLensIndex) === cycle.ids.length - 1;
+    const snap = immediate || prevLensIndex < 0 || wrapped || !usesLensMotion(prefs.edition, prefs.motion) || reducedMotion.matches;
+    const x = nextIndex * 182;
+    if (snap) {
+      lens.style.transition = 'none';
+      lens.style.transform = `translate3d(${x}px, 0, 0)`;
+      void lens.offsetWidth;
+      lens.style.transition = '';
+    } else {
+      lens.style.transform = `translate3d(${x}px, 0, 0)`;
     }
-    // Balancing keeps the line count, so one read pass after all writes decides
-    // which new titles fit their two lines; clamped ones keep full-width lines.
-    const fits = retitled.map(title => title.scrollHeight <= title.clientHeight);
-    retitled.forEach((title, index) => { title.dataset.balance = String(fits[index]); });
-    renderSelection();
+    prevLensIndex = nextIndex;
   }
-  function scheduleRefresh() {
-    if (refreshFrame || !alive || !cycle) return;
-    refreshFrame = requestAnimationFrame(() => { refreshFrame = 0; if (alive) refresh(); });
-  }
-  function scrollSelected() {
-    if (!cycle || !list || !viewportWidth) return;
-    // Cards have a fixed 182px border box. Avoid a forced layout after each selection.
-    const left = cycle.index * 182, right = left + 182;
-    const next = left < scrollPosition ? left : right > scrollPosition + viewportWidth ? right - viewportWidth : scrollPosition;
-    if (next !== scrollPosition) list.scrollLeft = scrollPosition = next;
-  }
-  function reveal() {
-    if (!cycle || !overlay) return;
-    overlay.dataset.revealed = 'true';
-    motion = createFivebeatMotion();
-    for (const id of cycle.ids) {
-      const node = rows.get(id), row = node.value;
-      node.motion = motion.mount(node.icon, row.kind, row.draft);
+
+  function renderSelection(immediate = false) {
+    if (!cycle || !list) return;
+    if (cycle.selected !== selectedId) {
+      rows.get(selectedId)?.card.setAttribute('aria-selected', 'false');
+      selectedId = cycle.selected;
+      const card = rows.get(selectedId)?.card;
+      if (card) {
+        card.setAttribute('aria-selected', 'true');
+        list.setAttribute('aria-activedescendant', card.id);
+      }
     }
-    releasePreview = host.preview(cycle.ids);
-    refresh(); scrollSelected(); list?.focus({ preventScroll: true });
+    syncLens(immediate);
   }
-  function begin(direction = 1, demo = false) {
-    if (!alive || composing) return;
-    if (cycle) { cycle.step(direction); renderSelection(); scrollSelected(); return; }
-    const ids = host.candidates();
-    if (ids.length < 2) return;
-    simulated = demo;
-    returnFocus = document.activeElement;
-    const selection = window.getSelection();
-    if (returnFocus instanceof HTMLInputElement || returnFocus instanceof HTMLTextAreaElement) {
-      returnSelection = { start: returnFocus.selectionStart, end: returnFocus.selectionEnd, direction: returnFocus.selectionDirection };
-    } else if (selection?.rangeCount && returnFocus?.contains(selection.anchorNode)) returnSelection = { range: selection.getRangeAt(0).cloneRange() };
-    cycle = new SwitchCycle(ids, host.current(), direction);
-    overlay = document.createElement('div'); overlay.className = 'dsh-switcher'; overlay.dataset.revealed = 'false';
-    overlay.dataset.pointer = 'keyboard';
-    overlay.dataset.theme = host.theme(); overlay.dataset.shortcutModal = 'dsh-switcher'; overlay.tabIndex = -1;
-    overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', '切换会话');
-    const panel = document.createElement('div'); panel.className = 'dsh-switcher-panel'; panel.style.setProperty('--sw-width', `${ids.length * 182 + 32}px`);
-    list = document.createElement('div'); list.className = 'dsh-switcher-list'; list.tabIndex = -1; list.style.outline = 'none'; list.setAttribute('role', 'listbox'); list.setAttribute('aria-label', '最近会话');
-    ids.forEach((id, index) => {
-      const card = document.createElement('div'); card.className = 'dsh-switcher-card'; card.id = `dsh-switcher-option-${index}`; card.setAttribute('role', 'option'); card.setAttribute('aria-selected', 'false');
+
+  function buildCards() {
+    if (!cycle || !list) return;
+    list.textContent = ''; rows.clear(); selectedId = undefined; prevLensIndex = -1;
+    lens = document.createElement('div'); lens.className = 'dsh-switcher-lens'; lens.setAttribute('aria-hidden', 'true');
+    list.append(lens);
+    const statusFirst = isStatusFirstEdition(prefs.edition);
+    const idPrefix = inline ? 'dsh-switcher-preview-option' : 'dsh-switcher-option';
+
+    cycle.ids.forEach((id, index) => {
+      const card = document.createElement('div'); card.className = 'dsh-switcher-card';
+      card.id = `${idPrefix}-${index}`; card.setAttribute('role', 'option'); card.setAttribute('aria-selected', 'false');
+
       const project = document.createElement('span'); project.className = 'dsh-switcher-project';
-      const projectName = document.createElement('span'); projectName.className = 'dsh-switcher-project-name';
-      const here = document.createElement('span'); here.className = 'dsh-switcher-here'; here.textContent = '当前';
-      project.append(projectName, here);
+      let projectName, chip;
+      if (prefs.edition === 'split') {
+        projectName = document.createElement('span'); projectName.className = 'dsh-switcher-project-name';
+        const here = document.createElement('span'); here.className = 'dsh-switcher-here'; here.textContent = '当前';
+        project.append(projectName, here);
+      } else {
+        chip = document.createElement('span'); chip.className = 'dsh-ws-chip';
+        projectName = document.createElement('span'); projectName.className = 'dsh-ws-chip-text';
+        chip.append(createFolderIcon(), projectName);
+        project.append(chip);
+      }
+
       const title = document.createElement('span'); title.className = 'dsh-switcher-title';
       const status = document.createElement('div'); status.className = 'dsh-switcher-status';
       const icon = document.createElement('span'); icon.className = 'dsh-switcher-icon'; icon.setAttribute('aria-hidden', 'true');
       const statusLabel = document.createElement('span'); statusLabel.className = 'dsh-switcher-status-label';
-      const excerpt = document.createElement('p'); excerpt.className = 'dsh-switcher-excerpt';
-      status.append(icon, statusLabel); card.append(project, title, status, excerpt); list.append(card);
-      rows.set(id, { card, project, projectName, title, status, statusLabel, excerpt, icon, motion: { update() {} } });
-      // Pointer movement selects, without a stale hover overriding keyboard navigation.
-      card.addEventListener('pointermove', event => {
-        if (cycle && cycle.selected !== id && (event.movementX || event.movementY)) { cycle.select(id); renderSelection(); }
-      });
-      const commit = event => {
+      status.append(icon, statusLabel);
+
+      let excerpt = null;
+      if (statusFirst) {
+        const pulseDot = document.createElement('span'); pulseDot.className = 'dsh-pulse-dot'; pulseDot.setAttribute('aria-hidden', 'true');
+        status.append(pulseDot);
+        card.append(status, title, project);
+      } else {
+        excerpt = document.createElement('p'); excerpt.className = 'dsh-switcher-excerpt';
+        card.append(project, title, status, excerpt);
+      }
+
+      list.append(card);
+      rows.set(id, { card, project, chip, projectName, title, status, statusLabel, excerpt, icon, motion: { update() {} } });
+
+      if (!inline) {
+        // Pointer movement selects, without a stale hover overriding keyboard navigation.
+        card.addEventListener('pointermove', event => {
+          if (cycle && cycle.selected !== id && (event.movementX || event.movementY)) { cycle.select(id); renderSelection(); }
+        });
+      }
+      const activate = event => {
         if (!cycle) return;
-        event.preventDefault(); event.stopPropagation(); cycle.select(id); finish(true);
+        event.preventDefault(); event.stopPropagation();
+        cycle.select(id);
+        if (inline) { renderSelection(); scrollSelected(); }
+        else finish(true);
       };
-      card.addEventListener('click', commit);
+      card.addEventListener('click', activate);
       // macOS turns Control+primary-click into contextmenu, without a click event.
-      card.addEventListener('contextmenu', event => { if (event.ctrlKey) commit(event); });
+      if (!inline) card.addEventListener('contextmenu', event => { if (event.ctrlKey) activate(event); });
     });
-    // Start each presentation with a quiet pointer. Enter/over events caused by
-    // revealing the panel must not reveal it or take over keyboard selection.
-    overlay.addEventListener('pointermove', event => {
-      if (overlay.dataset.pointer === 'keyboard' && (event.movementX || event.movementY)) overlay.dataset.pointer = 'mouse';
-    }, { capture: true, passive: true });
+
+    if (motion) {
+      motion.destroy();
+      motion = createFivebeatMotion(prefs.motion);
+      for (const id of cycle.ids) {
+        const node = rows.get(id), row = host.row(id);
+        node.motion = motion.mount(node.icon, row.kind, row.draft);
+      }
+    }
+  }
+
+  function refresh() {
+    cancelAnimationFrame(refreshFrame); refreshFrame = 0;
+    if (!cycle || !overlay) return;
+    // Deletion or archiving cancels the frozen selection instead of opening a stale target.
+    if (!inline && cycle.ids.some(id => !host.exists(id))) { finish(false); return; }
+
+    const nextPrefs = normalizePrefs(host.prefs?.());
+    let immediateSelection = false;
+    if (nextPrefs.edition !== prefs.edition) {
+      prefs = nextPrefs; applyPrefsAttributes(); buildCards(); immediateSelection = true;
+    } else if (nextPrefs.motion !== prefs.motion) {
+      prefs = nextPrefs; applyPrefsAttributes(); motion?.setMode(prefs.motion); immediateSelection = true;
+    }
+
+    const theme = host.theme(), current = host.current(), statusFirst = isStatusFirstEdition(prefs.edition);
+    const retitled = [], truncChecks = [];
+    if (overlay.dataset.theme !== theme) overlay.dataset.theme = theme;
+
+    for (const id of cycle.ids) {
+      const row = host.row(id), node = rows.get(id), old = node.value || {}, here = id === current;
+      const label = statusFirst
+        ? `${row.label}，${row.title}，${row.workspaceName}`
+        : prefs.edition === 'b2'
+          ? `${row.workspaceName}，${row.title}，${row.label}`
+          : `${row.workspaceName}，${row.title}，${row.label}${here ? '，当前会话' : ''}`;
+      const text = row.text || row.placeholder || '', shortLabel = row.shortLabel || row.label;
+
+      if (node.label !== label) { node.card.setAttribute('aria-label', label); node.label = label; }
+      if (node.here !== here) { node.card.dataset.current = String(here); node.here = here; }
+
+      if (row.workspaceName !== old.workspaceName) {
+        node.projectName.textContent = row.workspaceName;
+        if (prefs.edition === 'split') node.project.title = row.workspaceName;
+        else truncChecks.push({ measure: node.projectName, target: node.chip || node.project, text: row.workspaceName, multiline: false });
+      }
+
+      if (node.excerpt) {
+        if (text !== (old.text || old.placeholder || '')) {
+          node.excerpt.textContent = text;
+          if (prefs.edition === 'split') node.excerpt.title = text;
+          else truncChecks.push({ measure: node.excerpt, target: node.excerpt, text: row.text ? text : '', multiline: false });
+        }
+        if (!node.value || !!row.text !== !!old.text) node.excerpt.dataset.empty = String(!row.text);
+      }
+
+      if (row.title !== old.title) {
+        node.title.textContent = phraseBreaks(row.title);
+        if (prefs.edition === 'split') { node.title.title = row.title; retitled.push(node.title); }
+        else truncChecks.push({ measure: node.title, target: node.title, text: row.title, multiline: true });
+      }
+
+      if (row.kind !== old.kind) { node.status.dataset.status = row.kind; node.icon.dataset.status = row.kind; }
+      if (row.label !== old.label) { node.status.title = row.label; node.icon.title = row.label; }
+      if (shortLabel !== (old.shortLabel || old.label)) {
+        node.statusLabel.textContent = shortLabel;
+        if (node.value && row.kind !== old.kind && prefs.motion !== 'off' && !reducedMotion.matches && typeof node.statusLabel.animate === 'function') {
+          node.statusLabel.animate(
+            [{ opacity: 0, transform: 'translateY(3px)' }, { opacity: 1, transform: 'translateY(0)' }],
+            { duration: 220, easing: 'cubic-bezier(.2, .8, .2, 1)' },
+          );
+        }
+      }
+      if (row.kind !== old.kind || row.draft !== old.draft) node.motion.update(row.kind, row.draft);
+      node.value = row;
+    }
+
+    if (retitled.length) {
+      const fits = retitled.map(title => title.scrollHeight <= title.clientHeight);
+      retitled.forEach((title, index) => { title.dataset.balance = String(fits[index]); });
+    }
+    if (truncChecks.length) {
+      const truncated = truncChecks.map(item => item.text && (item.multiline
+        ? item.measure.scrollHeight > item.measure.clientHeight + 1
+        : item.measure.scrollWidth > item.measure.clientWidth + 1));
+      truncChecks.forEach((item, index) => {
+        if (truncated[index]) item.target.title = item.text;
+        else item.target.removeAttribute('title');
+      });
+    }
+
+    renderSelection(immediateSelection);
+  }
+
+  function scheduleRefresh() {
+    if (refreshFrame || !alive || !cycle) return;
+    refreshFrame = requestAnimationFrame(() => { refreshFrame = 0; if (alive) refresh(); });
+  }
+
+  function scrollSelected(immediate = false) {
+    if (!cycle || !list || !viewportWidth) return;
+    // Cards have a fixed 182px border box. Avoid a forced layout after each selection.
+    const left = cycle.index * 182, right = left + 182;
+    const next = left < scrollPosition ? left : right > scrollPosition + viewportWidth ? right - viewportWidth : scrollPosition;
+    if (next !== scrollPosition) {
+      scrollPosition = next;
+      const smooth = !immediate && usesLensMotion(prefs.edition, prefs.motion) && !reducedMotion.matches && typeof list.scrollTo === 'function';
+      if (smooth) list.scrollTo({ left: next, behavior: 'smooth' });
+      else list.scrollLeft = next;
+    }
+  }
+
+  function reveal() {
+    if (!cycle || !overlay) return;
+    overlay.dataset.revealed = 'true';
+    motion = createFivebeatMotion(prefs.motion);
+    for (const id of cycle.ids) {
+      const node = rows.get(id), row = node.value || host.row(id);
+      node.motion = motion.mount(node.icon, row.kind, row.draft);
+    }
+    releasePreview = host.preview(cycle.ids);
+    refresh(); scrollSelected(true);
+    if (!inline) list?.focus({ preventScroll: true });
+  }
+
+  function begin(direction = 1, demo = false) {
+    if (!alive || (!inline && composing)) return;
+    if (cycle) { cycle.step(direction); renderSelection(); scrollSelected(); return; }
+    const ids = host.candidates();
+    if (ids.length < 2) return;
+    prefs = normalizePrefs(host.prefs?.());
+    simulated = demo || inline;
+    if (!inline) {
+      returnFocus = document.activeElement;
+      const selection = typeof window.getSelection === 'function' ? window.getSelection() : null;
+      if (returnFocus instanceof HTMLInputElement || returnFocus instanceof HTMLTextAreaElement) {
+        returnSelection = { start: returnFocus.selectionStart, end: returnFocus.selectionEnd, direction: returnFocus.selectionDirection };
+      } else if (selection?.rangeCount && returnFocus?.contains(selection.anchorNode)) {
+        returnSelection = { range: selection.getRangeAt(0).cloneRange() };
+      }
+    }
+    cycle = new SwitchCycle(ids, host.current(), direction);
+    overlay = document.createElement('div'); overlay.className = 'dsh-switcher'; overlay.dataset.revealed = 'false';
+    overlay.dataset.pointer = inline ? 'mouse' : 'keyboard';
+    overlay.dataset.theme = host.theme();
+    applyPrefsAttributes();
+    if (inline) {
+      overlay.dataset.inlinePreview = 'true';
+      overlay.setAttribute('role', 'region'); overlay.setAttribute('aria-label', '切换器实时预览');
+    } else {
+      overlay.dataset.shortcutModal = 'dsh-switcher'; overlay.tabIndex = -1;
+      overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', '切换会话');
+    }
+    const panel = document.createElement('div'); panel.className = 'dsh-switcher-panel'; panel.style.setProperty('--sw-width', `${ids.length * 182 + 32}px`);
+    list = document.createElement('div'); list.className = 'dsh-switcher-list'; list.tabIndex = -1; list.style.outline = 'none';
+    list.setAttribute('role', 'listbox'); list.setAttribute('aria-label', '最近会话');
+
+    buildCards();
+    if (!inline) {
+      // Start each presentation with a quiet pointer. Enter/over events caused by
+      // revealing the panel must not reveal it or take over keyboard selection.
+      overlay.addEventListener('pointermove', event => {
+        if (overlay.dataset.pointer === 'keyboard' && (event.movementX || event.movementY)) overlay.dataset.pointer = 'mouse';
+      }, { capture: true, passive: true });
+      overlay.addEventListener('pointerdown', event => { if (event.target === overlay) { event.preventDefault(); finish(false); } });
+    }
     panel.append(list); overlay.append(panel); container.append(overlay);
     const viewport = list;
     viewportWidth = viewport.clientWidth; scrollPosition = 0;
     viewport.addEventListener('scroll', () => { if (list === viewport) scrollPosition = viewport.scrollLeft; }, { passive: true });
-    resize = new ResizeObserver(entries => {
-      if (list !== viewport) return;
-      viewportWidth = entries[0].contentRect.width; scrollSelected();
-    });
-    resize.observe(viewport);
-    overlay.addEventListener('pointerdown', event => { if (event.target === overlay) { event.preventDefault(); finish(false); } });
+    if (typeof ResizeObserver === 'function') {
+      resize = new ResizeObserver(entries => {
+        if (list !== viewport) return;
+        viewportWidth = entries[0].contentRect.width; scrollSelected(true);
+      });
+      resize.observe(viewport);
+    }
     refresh();
-    // Own the full keyboard gesture before the delayed visual reveal.
-    overlay?.focus({ preventScroll: true });
-    if (cycle) timer = setTimeout(reveal, demo ? 0 : 140);
+    if (inline) {
+      reveal();
+    } else {
+      // Own the full keyboard gesture before the delayed visual reveal.
+      overlay?.focus({ preventScroll: true });
+      if (cycle) timer = setTimeout(reveal, demo ? 0 : 140);
+    }
   }
-  listen(window, 'blur', () => finish(false, false));
-  listen(document, 'visibilitychange', () => { if (document.hidden) finish(false, false); });
-  listen(document, 'compositionstart', () => { composing = true; finish(false); }, true);
-  listen(document, 'compositionend', () => { composing = false; }, true);
+
+  if (!inline) {
+    listen(window, 'blur', () => finish(false, false));
+    listen(document, 'visibilitychange', () => { if (document.hidden) finish(false, false); });
+    listen(document, 'compositionstart', () => { composing = true; finish(false); }, true);
+    listen(document, 'compositionend', () => { composing = false; }, true);
+  }
   stops.push(host.subscribe(scheduleRefresh));
   const controller = {
     begin,
+    refresh,
+    select(id) { if (cycle) { cycle.select(id); renderSelection(); scrollSelected(); } },
     get active() { return !!cycle; },
     get composing() { return composing; },
     get simulated() { return simulated; },
@@ -171,7 +357,9 @@ export function mountSwitcher(container, host) {
     cancel: () => finish(false),
     destroy() { alive = false; finish(false); stops.forEach(stop => stop()); },
   };
-  stops.push(installSwitcherKeyboard(window, controller, () =>
-    !!document.querySelector('[data-shortcut-modal], [aria-modal="true"]')));
+  if (!inline) {
+    stops.push(installSwitcherKeyboard(window, controller, () =>
+      !!document.querySelector('[data-shortcut-modal], [aria-modal="true"]')));
+  }
   return controller;
 }

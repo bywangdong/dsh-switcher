@@ -1,0 +1,881 @@
+:root {
+  color-scheme: dark;
+  /* Page chrome follows DSH itself: near-zero-chroma greys + DSH accent blue. */
+  --ui-bg: #151517;
+  --ui-surface: #1d1e20;
+  --ui-elevated: #2c2d30;
+  --ui-border: rgb(255 255 255 / .075);
+  --ui-text: #e7e8e9;
+  --ui-muted: #8e9096;
+  --ui-accent: #84a9f9;
+  --ui-pill: rgb(132 169 249 / .13);
+}
+
+body[data-theme=light] {
+  color-scheme: light;
+  --ui-bg: #f5f6f7;
+  --ui-surface: #ffffff;
+  --ui-elevated: #ffffff;
+  --ui-border: rgb(24 28 36 / .08);
+  --ui-text: #1b1d21;
+  --ui-muted: #6b6f76;
+  --ui-accent: #4e75df;
+  --ui-pill: rgb(78 117 223 / .1);
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+button, select { font: inherit; color: inherit; }
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 18px;
+  padding: 12px 24px;
+  background: color-mix(in srgb, var(--ui-bg) 85%, transparent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.topbar-brand strong { font-weight: 600; letter-spacing: -.01em; }
+.topbar-brand span { color: var(--ui-muted); font-size: 12px; }
+
+.nav-jump {
+  font-size: 11.5px;
+  padding: 2.5px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ui-text) 6%, transparent);
+  color: var(--ui-muted);
+  text-decoration: none;
+  margin-left: 4px;
+  transition: color .14s ease, background .14s ease;
+}
+.nav-jump:hover {
+  color: var(--ui-text);
+  background: color-mix(in srgb, var(--ui-text) 11%, transparent);
+}
+
+.topbar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.seg {
+  display: inline-flex;
+  padding: 2.5px;
+  gap: 2px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--ui-text) 5%, transparent);
+  border: 1px solid var(--ui-border);
+}
+.seg button {
+  border: 0;
+  background: transparent;
+  padding: 5px 10px;
+  border-radius: 6.5px;
+  font-size: 12px;
+  color: var(--ui-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .14s ease, color .14s ease;
+}
+.seg button:hover { color: var(--ui-text); }
+.seg button[aria-pressed=true] {
+  background: var(--ui-elevated);
+  color: var(--ui-text);
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgb(0 0 0 / .1);
+}
+
+.scene-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--ui-border);
+  background: color-mix(in srgb, var(--ui-text) 4%, transparent);
+  font-size: 12px;
+  color: var(--ui-muted);
+}
+.scene-select select {
+  border: 0;
+  background: transparent;
+  color: var(--ui-text);
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+.wabi-wall {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 16px 20px 48px;
+}
+
+.manifesto {
+  margin-bottom: 18px;
+  padding: 13px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.manifesto-order {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  font-size: 12.5px;
+  color: var(--ui-text);
+}
+.manifesto-order b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-accent);
+  margin-right: 3px;
+}
+.manifesto-order i {
+  font-style: normal;
+  color: var(--ui-muted);
+  opacity: .6;
+}
+.manifesto-order del {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--ui-muted);
+  opacity: .75;
+}
+.manifesto p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ui-muted);
+}
+
+.wall-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.edition-block {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.edition-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 0 4px;
+}
+
+.edition-head-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+}
+
+.edition-pill {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2.5px 8px;
+  border-radius: 6px;
+  background: var(--ui-pill);
+  color: var(--ui-accent);
+  white-space: nowrap;
+}
+
+.edition-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ui-text);
+  white-space: nowrap;
+}
+
+.edition-summary {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ui-muted);
+}
+
+.focus-btn {
+  flex: none;
+  margin-top: 2px;
+  border: 1px solid var(--ui-border);
+  background: transparent;
+  color: var(--ui-muted);
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.focus-btn:hover {
+  color: var(--ui-text);
+  background: color-mix(in srgb, var(--ui-text) 6%, transparent);
+}
+
+.stage-box {
+  position: relative;
+  min-height: 212px;
+  border-radius: 16px;
+  border: 1px solid var(--ui-border);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  isolation: isolate;
+}
+
+.stage-bg,
+.immersive-backdrop {
+  background-image: url('../materials/reference/context-dark.png');
+  background-size: cover;
+  background-position: center 46%;
+}
+body[data-theme=light] .stage-bg,
+body[data-theme=light] .immersive-backdrop {
+  background-image: url('../materials/reference/context-light.png');
+}
+
+.stage-bg {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+
+.stage-mount {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px 12px;
+}
+
+.stage-mount .dsh-switcher,
+.immersive-mount .dsh-switcher {
+  position: relative;
+  inset: auto;
+  z-index: 1;
+  width: 100%;
+}
+.stage-mount .dsh-switcher-panel {
+  width: min(var(--sw-width, 942px), calc(100vw - 64px));
+}
+
+.immersive-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-position: center;
+}
+body[data-view=single] .immersive-backdrop { display: block; }
+
+.immersive-stage {
+  min-height: calc(100vh - 58px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px 84px;
+}
+.immersive-mount {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.single-caption {
+  max-width: 942px;
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 8px 13px;
+  border-radius: 10px;
+  border: 1px solid var(--ui-border);
+  background: color-mix(in srgb, var(--ui-bg) 82%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+.single-caption p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ui-muted);
+}
+
+.immersive-hud {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--ui-border);
+  background: color-mix(in srgb, var(--ui-bg) 84%, transparent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  font-size: 12px;
+  color: var(--ui-muted);
+}
+.hold-btn {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-elevated);
+  color: var(--ui-text);
+  padding: 4px 10px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.hold-btn[aria-pressed=true] {
+  border-color: var(--ui-accent);
+  color: var(--ui-accent);
+}
+
+/* ==========================================================================
+   WABI-SABI × PRECISION TOOL ARCHITECTURE
+   Hierarchy: 1. Status (Pulse) -> 2. Title (Subject + Ma) -> 3. Project (Anchor)
+   No latest-user-input excerpt. DSH-native neutral greys; DSH blue / amber only on live states.
+   ========================================================================== */
+
+.dsh-switcher[data-wabi] {
+  /* Light: sampled from DSH itself — sidebar #e7e8e9, popup #edeff0, cards #fafbfc,
+     accent #4e75df. Near-zero chroma; colour only where something is happening. */
+  --sw-tint: rgb(237 239 241 / .84);
+  --sw-edge: rgb(255 255 255 / .9);
+  --sw-sheen: none;
+  --sw-card: rgb(255 255 255 / .34);
+  --sw-card-edge: rgb(24 28 36 / .055);
+  --sw-selected: rgb(24 28 36 / .07);
+  --sw-selected-edge: rgb(24 28 36 / .15);
+  --sw-lift: 0 1px 2px rgb(24 28 36 / .05), 0 5px 14px rgb(24 28 36 / .06), inset 0 1px rgb(255 255 255 / .22);
+  --sw-ink: #1b1d21;
+  --sw-title-idle: #3a3d43;
+  --sw-status-idle: #71757c;
+  --sw-icon-idle: #8a8e95;
+  --sw-draft-ink: #50545b;
+  --sw-blue: #4569d0;
+  --sw-amber: #96681c;
+  --sw-pill-bg: rgb(24 28 36 / .045);
+  --sw-pill-edge: rgb(24 28 36 / .075);
+  --sw-pill-ink: #5f636b;
+  --sw-pill-sel-bg: rgb(255 255 255 / .62);
+  --sw-pill-sel-edge: rgb(24 28 36 / .12);
+  --sw-pill-sel-ink: #1f2227;
+  --sw-divider: rgb(24 28 36 / .08);
+  --sw-opaque: #eef0f2;
+  --sw-shadow: 0 24px 60px rgb(24 28 36 / .15), 0 6px 16px rgb(24 28 36 / .06), 0 0 0 .5px rgb(24 28 36 / .1);
+}
+
+.dsh-switcher[data-wabi][data-theme=dark] {
+  /* Dark: sampled from DSH itself — main #151517, popup #27282a, cards #3d3e42,
+     text #e7e8e9, accent #84a9f9. */
+  --sw-tint: rgb(37 38 41 / .84);
+  --sw-edge: rgb(255 255 255 / .09);
+  --sw-sheen: none;
+  --sw-card: rgb(255 255 255 / .028);
+  --sw-card-edge: rgb(255 255 255 / .05);
+  --sw-selected: rgb(255 255 255 / .1);
+  --sw-selected-edge: rgb(255 255 255 / .15);
+  --sw-lift: 0 1px 2px rgb(0 0 0 / .25), 0 8px 20px rgb(0 0 0 / .26), inset 0 1px rgb(255 255 255 / .05);
+  --sw-ink: #ecedee;
+  --sw-title-idle: #c6c8cc;
+  --sw-status-idle: #8a8d93;
+  --sw-icon-idle: #74777d;
+  --sw-draft-ink: #b4b7bc;
+  --sw-blue: #84a9f9;
+  --sw-amber: #d9b072;
+  --sw-pill-bg: rgb(255 255 255 / .045);
+  --sw-pill-edge: rgb(255 255 255 / .075);
+  --sw-pill-ink: #9a9da3;
+  --sw-pill-sel-bg: rgb(255 255 255 / .09);
+  --sw-pill-sel-edge: rgb(255 255 255 / .15);
+  --sw-pill-sel-ink: #e4e5e7;
+  --sw-divider: rgb(255 255 255 / .07);
+  --sw-opaque: #27282a;
+  --sw-shadow: 0 28px 70px rgb(0 0 0 / .45), 0 6px 18px rgb(0 0 0 / .22), 0 0 0 .5px rgb(0 0 0 / .6);
+}
+
+.dsh-switcher[data-wabi] .dsh-switcher-panel {
+  padding: 15px;
+  border-radius: 22px;
+  background: var(--sw-tint);
+  backdrop-filter: blur(44px) saturate(110%);
+  -webkit-backdrop-filter: blur(44px) saturate(110%);
+}
+
+/* Reorder card anatomy: Status -> Title -> Project (no excerpt) */
+.dsh-switcher[data-wabi] .dsh-switcher-card {
+  grid-template-rows: 20px minmax(0, 1fr) 21px;
+  grid-template-areas:
+    'status'
+    'title'
+    'project';
+  gap: 7px;
+  padding: 12px 10px 11px;
+  border-radius: 13px;
+  transition: background-color .15s ease-out, box-shadow .15s ease-out;
+}
+
+.dsh-switcher[data-wabi] .dsh-switcher-card::after {
+  border-radius: 10px;
+  transition: opacity .15s ease-out;
+}
+
+/* 1st Priority: Status & 5-Beat Pulse */
+.dsh-switcher[data-wabi] .dsh-switcher-status {
+  grid-area: status;
+  height: 20px;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 400;
+  letter-spacing: .01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--sw-status-idle);
+}
+
+.dsh-switcher[data-wabi] .dsh-switcher-icon {
+  color: var(--sw-icon-idle);
+}
+
+/* Idle stays hushed; active states emerge in mineral pigments */
+.dsh-switcher[data-wabi] .dsh-switcher-status[data-status=draft],
+.dsh-switcher[data-wabi] .dsh-switcher-icon[data-status=draft] {
+  color: var(--sw-draft-ink);
+}
+.dsh-switcher[data-wabi] .dsh-switcher-status[data-status=running],
+.dsh-switcher[data-wabi] .dsh-switcher-status[data-status=unread],
+.dsh-switcher[data-wabi] .dsh-switcher-icon[data-status=running],
+.dsh-switcher[data-wabi] .dsh-switcher-icon[data-status=unread] {
+  color: var(--sw-blue);
+}
+.dsh-switcher[data-wabi] .dsh-switcher-status[data-status=approval],
+.dsh-switcher[data-wabi] .dsh-switcher-icon[data-status=approval] {
+  color: var(--sw-amber);
+}
+
+.dsh-switcher[data-wabi] .dsh-switcher-status:not([data-status=idle]) .dsh-switcher-status-label {
+  font-weight: 500;
+}
+
+/* 2nd Priority: Session Title with generous breathing space (Ma) */
+.dsh-switcher[data-wabi] .dsh-switcher-title {
+  grid-area: title;
+  align-self: start;
+  padding-top: 1px;
+  font-size: 14px;
+  line-height: 21px;
+  font-weight: 400;
+  letter-spacing: .04px;
+  color: var(--sw-title-idle);
+  text-wrap: wrap !important;
+}
+
+.dsh-switcher[data-wabi] .dsh-switcher-card[aria-selected=true] .dsh-switcher-title {
+  font-weight: 500;
+  color: var(--sw-ink);
+}
+
+/* 3rd Priority: Project Anchor (Unified Neutral Capsule at Foot) */
+.dsh-switcher[data-wabi] .dsh-switcher-project {
+  grid-area: project;
+  margin: 0;
+  padding: 0;
+  height: 21px;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+  align-items: center;
+}
+
+.dsh-ws-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4.5px;
+  min-width: 0;
+  max-width: 100%;
+  height: 20px;
+  padding: 0 7.5px 0 5.5px;
+  margin-left: -1px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 15px;
+  font-weight: 400;
+  letter-spacing: .01em;
+  background: var(--sw-pill-bg);
+  box-shadow: inset 0 0 0 .75px var(--sw-pill-edge);
+  color: var(--sw-pill-ink);
+  transition: background-color .15s ease-out, box-shadow .15s ease-out, color .15s ease-out;
+}
+
+.dsh-ws-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsh-ws-icon {
+  width: 11.5px;
+  height: 11.5px;
+  flex: none;
+  opacity: .66;
+}
+.dsh-ws-icon svg {
+  display: block;
+  width: 11.5px;
+  height: 11.5px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dsh-switcher[data-wabi] .dsh-switcher-card[aria-selected=true] .dsh-ws-chip {
+  background: var(--sw-pill-sel-bg);
+  box-shadow: inset 0 0 0 .75px var(--sw-pill-sel-edge);
+  color: var(--sw-pill-sel-ink);
+  font-weight: 500;
+}
+.dsh-switcher[data-wabi] .dsh-switcher-card[aria-selected=true] .dsh-ws-icon {
+  opacity: .86;
+}
+
+/* --------------------------------------------------------------------------
+   01 · 素笺 (`data-wabi="sujian"`): Classic 158px height, generous empty Ma
+   -------------------------------------------------------------------------- */
+.dsh-switcher[data-wabi=sujian] .dsh-switcher-panel {
+  padding: 15px;
+}
+.dsh-switcher[data-wabi=sujian] .dsh-switcher-card {
+  height: 158px;
+  gap: 8px;
+  padding: 13px 10px 11px;
+}
+
+/* --------------------------------------------------------------------------
+   02 · 器物 (`data-wabi="kibutsu"`): Refined 136px instrument proportion
+   + tiny mineral right-dot on active states for 30ms peripheral recognition
+   -------------------------------------------------------------------------- */
+.dsh-switcher[data-wabi=kibutsu] .dsh-switcher-card {
+  height: 136px;
+  gap: 6px;
+  padding: 11px 10px 10px;
+}
+.dsh-switcher[data-wabi=kibutsu] .dsh-switcher-title {
+  line-height: 20.5px;
+}
+
+.dsh-pulse-dot {
+  display: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  margin-left: auto;
+  flex: none;
+  background: currentColor;
+  opacity: 0;
+  transform: scale(.3);
+  transition: opacity .2s ease-out, transform .24s cubic-bezier(.2, .8, .2, 1);
+}
+.dsh-switcher[data-wabi=kibutsu] .dsh-pulse-dot {
+  display: block;
+}
+.dsh-switcher[data-wabi=kibutsu] .dsh-switcher-status:is([data-status=running], [data-status=approval], [data-status=unread]) .dsh-pulse-dot {
+  opacity: .85;
+  transform: none;
+}
+
+@keyframes dsh-dot-pulse {
+  0%, 100% { opacity: .28; transform: scale(.78); }
+  50% { opacity: .98; transform: scale(1.18); }
+}
+body[data-icon-motion=orbital] .dsh-switcher[data-wabi=kibutsu] .dsh-switcher-status:is([data-status=running], [data-status=approval]) .dsh-pulse-dot {
+  animation: dsh-dot-pulse 1.45s ease-in-out infinite;
+}
+
+/* --------------------------------------------------------------------------
+   03 · 界尺 (`data-wabi="jiechi"`): Borderless unfolded scroll + vertical silk rule
+   -------------------------------------------------------------------------- */
+.dsh-switcher[data-wabi=jiechi] .dsh-switcher-card {
+  height: 138px;
+  gap: 6px;
+  padding: 11px 10px 10px;
+  background-color: transparent;
+  box-shadow: none;
+}
+.dsh-switcher[data-wabi=jiechi] .dsh-switcher-card[aria-selected=true] {
+  background-color: var(--sw-selected);
+}
+
+/* Hairline vertical rule only between two unselected neighbours */
+.dsh-switcher[data-wabi=jiechi] .dsh-switcher-card:not([aria-selected=true]):not(:last-child):not(:has(+ .dsh-switcher-card[aria-selected=true]))::before {
+  content: '';
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  right: -3.5px;
+  width: 1px;
+  background: var(--sw-divider);
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------------------
+   04 · 墨韵 (`data-wabi="moyun"`): Mineral ink wash on active status
+   + quiet unboxed colophon at bottom (never two pills on one card)
+   -------------------------------------------------------------------------- */
+.dsh-switcher[data-wabi=moyun] .dsh-switcher-card {
+  height: 138px;
+  grid-template-rows: 22px minmax(0, 1fr) 18px;
+  gap: 6px;
+  padding: 11px 10px 10px;
+}
+
+.dsh-switcher[data-wabi=moyun] .dsh-switcher-status[data-status=idle] {
+  opacity: .76;
+}
+
+.dsh-switcher[data-wabi=moyun] .dsh-switcher-status:not([data-status=idle]) {
+  width: fit-content;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 8.5px 0 5px;
+  margin-left: -3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  box-shadow: inset 0 0 0 .75px color-mix(in srgb, currentColor 22%, transparent);
+}
+
+.dsh-switcher[data-wabi=moyun] .dsh-switcher-status:not([data-status=idle]) .dsh-switcher-icon {
+  margin-left: -2px;
+}
+
+.dsh-switcher[data-wabi=moyun] .dsh-ws-chip {
+  height: 18px;
+  padding: 0;
+  margin-left: -1px;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--sw-pill-ink);
+}
+.dsh-switcher[data-wabi=moyun] .dsh-switcher-card[aria-selected=true] .dsh-ws-chip {
+  color: var(--sw-pill-sel-ink);
+}
+
+/* --------------------------------------------------------------------------
+   Motion (only where it carries information)
+   1. Selection lens: one shared highlight glides card-to-card on each step.
+   2. Live status change: label rises in, colours cross-fade (JS + transitions).
+   3. Narrow window: off-screen selection scrolls in smoothly (JS).
+   Reveal stays instant — a high-frequency keyboard surface must feel immediate.
+   -------------------------------------------------------------------------- */
+.dsh-switcher[data-lens] .dsh-switcher-list {
+  position: relative;
+}
+
+.dsh-switcher-lens {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: 176px;
+  border-radius: 10px;
+  background: var(--sw-selected);
+  box-shadow: inset 0 0 0 1px var(--sw-selected-edge), var(--sw-lift);
+  pointer-events: none;
+  will-change: transform;
+  transition: transform .16s cubic-bezier(.25, .8, .25, 1);
+}
+
+/* The lens is the selected surface; the selected card itself stays clear. */
+.dsh-switcher[data-wabi][data-lens] .dsh-switcher-card[aria-selected=true] {
+  background-color: transparent;
+  box-shadow: none;
+}
+.dsh-switcher[data-wabi][data-lens] .dsh-switcher-card::after {
+  display: none;
+}
+
+.dsh-switcher[data-wabi] .dsh-switcher-title {
+  transition: color .15s ease-out;
+}
+.dsh-switcher[data-wabi] .dsh-switcher-status,
+.dsh-switcher[data-wabi] .dsh-switcher-icon {
+  transition: color .22s ease-out, background-color .22s ease-out, box-shadow .22s ease-out, opacity .22s ease-out;
+}
+
+body[data-motion=off] .dsh-switcher *,
+body[data-motion=off] .dsh-switcher *::before,
+body[data-motion=off] .dsh-switcher *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+.sim-btn {
+  border: 1px solid var(--ui-border);
+  background: color-mix(in srgb, var(--ui-text) 4%, transparent);
+  color: var(--ui-muted);
+  padding: 5px 10px;
+  border-radius: 9px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sim-btn:hover { color: var(--ui-text); }
+.sim-btn[aria-pressed=true] {
+  color: var(--ui-accent);
+  border-color: color-mix(in srgb, var(--ui-accent) 40%, transparent);
+  background: var(--ui-pill);
+}
+
+/* --------------------------------------------------------------------------
+   Hold-to-Compare: Saved B2 Snapshot (`data-b2="true"`)
+   -------------------------------------------------------------------------- */
+.dsh-switcher[data-b2=true] {
+  --sw-tint: rgb(245 246 248 / .78);
+  --sw-edge: rgb(255 255 255 / .92);
+  --sw-card: rgb(255 255 255 / .28);
+  --sw-card-edge: rgb(24 32 46 / .055);
+  --sw-ink: #191c22;
+  --sw-title-idle: #333842;
+  --sw-muted: #505763;
+  --sw-note: #78808c;
+  --sw-faint: #89909b;
+  --sw-selected: rgb(24 32 46 / .075);
+  --sw-selected-edge: rgb(24 32 46 / .16);
+  --sw-pill-bg: rgb(24 32 46 / .048);
+  --sw-pill-edge: rgb(24 32 46 / .078);
+  --sw-pill-ink: #5a6270;
+  --sw-pill-sel-bg: rgb(255 255 255 / .66);
+  --sw-pill-sel-edge: rgb(24 32 46 / .12);
+  --sw-pill-sel-ink: #20252d;
+}
+.dsh-switcher[data-b2=true][data-theme=dark] {
+  --sw-tint: rgb(25 26 29 / .82);
+  --sw-edge: rgb(255 255 255 / .105);
+  --sw-card: rgb(255 255 255 / .024);
+  --sw-card-edge: rgb(255 255 255 / .05);
+  --sw-ink: #f3f4f6;
+  --sw-title-idle: #d7dbe2;
+  --sw-muted: #b0b6c0;
+  --sw-note: #828995;
+  --sw-faint: #767d89;
+  --sw-selected: rgb(255 255 255 / .105);
+  --sw-selected-edge: rgb(255 255 255 / .16);
+  --sw-pill-bg: rgb(255 255 255 / .045);
+  --sw-pill-edge: rgb(255 255 255 / .075);
+  --sw-pill-ink: #9ba2af;
+  --sw-pill-sel-bg: rgb(255 255 255 / .095);
+  --sw-pill-sel-edge: rgb(255 255 255 / .15);
+  --sw-pill-sel-ink: #e6e9ef;
+}
+.dsh-switcher[data-b2=true] .dsh-switcher-card {
+  height: 158px;
+  padding: 10px;
+  grid-template-rows: 22px minmax(0, 1fr) 20px 16px;
+  grid-template-areas: 'project' 'title' 'status' 'note';
+  gap: 5px;
+}
+.dsh-switcher[data-b2=true] .dsh-switcher-project {
+  margin: 0;
+  padding: 0;
+  height: 22px;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.dsh-switcher[data-b2=true] .dsh-switcher-title {
+  padding-top: 2px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  letter-spacing: .04px;
+  color: var(--sw-title-idle);
+  text-wrap: wrap !important;
+}
+.dsh-switcher[data-b2=true] .dsh-switcher-card[aria-selected=true] .dsh-switcher-title {
+  font-weight: 500;
+  color: var(--sw-ink);
+}
+.dsh-switcher[data-b2=true] .dsh-switcher-card[aria-selected=true] .dsh-ws-chip {
+  background: var(--sw-pill-sel-bg);
+  box-shadow: inset 0 0 0 .75px var(--sw-pill-sel-edge);
+  color: var(--sw-pill-sel-ink);
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsh-switcher[data-wabi] .dsh-switcher-card,
+  .dsh-switcher[data-wabi] .dsh-switcher-card::after,
+  .dsh-switcher[data-wabi] .dsh-switcher-title,
+  .dsh-switcher[data-wabi] .dsh-switcher-status,
+  .dsh-switcher[data-wabi] .dsh-switcher-icon,
+  .dsh-switcher-lens,
+  .dsh-pulse-dot,
+  .dsh-ws-chip { transition: none; }
+}
+
+@media (prefers-contrast: more) {
+  .dsh-switcher[data-wabi] {
+    --sw-title-idle: var(--sw-ink);
+    --sw-status-idle: var(--sw-ink);
+    --sw-icon-idle: var(--sw-ink);
+    --sw-pill-ink: var(--sw-ink);
+  }
+}
+
+@media (max-width: 820px) {
+  .topbar { padding: 10px 14px; }
+  .wabi-wall { padding: 12px 12px 36px; }
+  .stage-mount .dsh-switcher-panel { width: min(var(--sw-width, 942px), calc(100vw - 44px)); }
+  .manifesto-order del { margin-left: 0; }
+}

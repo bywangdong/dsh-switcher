@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DSH Switcher · 方案 B 统一样式对比</title>
+  <link rel="stylesheet" href="../../src/plugin/switcher.css">
+  <link rel="stylesheet" href="../typography/typography.css">
+  <link rel="stylesheet" href="grouping.css">
+</head>
+<body data-theme="dark" data-view="wall" data-scheme="plain">
+  <div class="immersive-backdrop" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="topbar-brand">
+      <strong>DSH Switcher</strong>
+      <span>方案 B 统一样式对比（B2 已归档保存）</span>
+      <a class="nav-jump" href="../typography/">← 字体对照</a>
+      <a class="nav-jump" href="../wabi/">状态优先 · 侘寂重构 →</a>
+    </div>
+
+    <div class="topbar-controls">
+      <div class="seg" role="group" aria-label="查看方式">
+        <button type="button" data-view="wall" aria-pressed="true">B1 / B2 同屏对比</button>
+        <button type="button" data-view="single" aria-pressed="false">单版实景细看</button>
+      </div>
+
+      <div class="seg" id="scheme-picker" role="group" aria-label="分组方案" hidden>
+        <button type="button" data-scheme="plain" aria-pressed="true">B1 · 全员无框微标</button>
+        <button type="button" data-scheme="pill" aria-pressed="false">B2 · 全员中性轻胶囊</button>
+        <button type="button" data-scheme="tray" aria-pressed="false">备选 · 同组连托</button>
+        <button type="button" data-scheme="dot" aria-pressed="false">备选 · 彩点眉标</button>
+        <button type="button" data-scheme="footer" aria-pressed="false">备选 · 标题置顶</button>
+      </div>
+
+      <div class="seg" role="group" aria-label="明暗主题">
+        <button type="button" data-theme="light" aria-pressed="false">亮色</button>
+        <button type="button" data-theme="dark" aria-pressed="true">暗色</button>
+      </div>
+
+      <label class="scene-select">
+        <span>分组分布</span>
+        <select id="scene" aria-label="分组分布场景">
+          <option value="everyday">日常实景（4 个 Agent + 1 个 dsh-shortcutter）</option>
+          <option value="same">全部同组（5 个全在 Agent）</option>
+          <option value="diverse">多项目交错（5 个不同工作区）</option>
+          <option value="stress">长名称与五种运行状态</option>
+        </select>
+      </label>
+    </div>
+  </header>
+
+  <main class="grouping-wall" id="wall-stage">
+    <div id="primary-list" class="wall-list"></div>
+
+    <details class="more-schemes" id="more-schemes">
+      <summary>展开其余分组探索存档（同组连托 / 彩点眉标 / 标题置顶 / 原分签）</summary>
+      <div id="archive-list" class="wall-list archive-wall"></div>
+    </details>
+  </main>
+
+  <section class="immersive-stage" id="single-stage" hidden aria-label="单版实景预览">
+    <div class="single-caption">
+      <span class="lane-tag is-refined" id="single-badge"></span>
+      <p id="single-desc"></p>
+    </div>
+    <div id="mount-single" class="immersive-mount"></div>
+    <div class="immersive-hud">
+      <span id="single-status"></span>
+      <span class="hud-sep" aria-hidden="true">·</span>
+      <span>方向键切换焦点</span>
+      <button type="button" id="hold-original" class="hold-btn" aria-pressed="false">按住对比 0.1.10 原版（或空格）</button>
+    </div>
+  </section>
+
+  <script type="module" src="grouping.js"></script>
+</body>
+</html>

@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 const root = new URL('../', import.meta.url);
 const read = path => readFile(new URL(path, root), 'utf8');
 let client = await read('src/plugin/client.js');
-for (const name of ['core', 'motion', 'host', 'keyboard', 'view']) {
+for (const name of ['core', 'motion', 'host', 'keyboard', 'view', 'settings']) {
   const source = (await read(`src/plugin/${name}.js`)).replace(/^import .*;\n/gm, '').replace(/^export /gm, '');
   client = client.replace(`/* BUILD_${name.toUpperCase()} */`, () => source);
 }

@@ -1,0 +1,496 @@
+:root {
+  color-scheme: dark;
+  --ui-bg: #121316;
+  --ui-surface: #1b1d21;
+  --ui-elevated: #262930;
+  --ui-border: rgb(255 255 255 / .085);
+  --ui-text: #eaecf0;
+  --ui-muted: #989fab;
+  --ui-accent: #8cb0df;
+  --ui-tag-base: rgb(255 255 255 / .08);
+  --ui-tag-ref: rgb(140 176 223 / .16);
+}
+
+body[data-theme=light] {
+  color-scheme: light;
+  --ui-bg: #f2f4f7;
+  --ui-surface: #ffffff;
+  --ui-elevated: #ffffff;
+  --ui-border: rgb(22 28 38 / .09);
+  --ui-text: #1d2128;
+  --ui-muted: #646b77;
+  --ui-accent: #365f96;
+  --ui-tag-base: rgb(22 28 38 / .07);
+  --ui-tag-ref: rgb(54 95 150 / .11);
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+button, select { font: inherit; color: inherit; }
+
+/* Top control bar */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 18px;
+  padding: 12px 24px;
+  background: color-mix(in srgb, var(--ui-bg) 84%, transparent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.topbar-brand strong { font-weight: 600; letter-spacing: -.01em; }
+.topbar-brand span { color: var(--ui-muted); font-size: 12px; }
+
+.topbar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.seg {
+  display: inline-flex;
+  padding: 2.5px;
+  gap: 2px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--ui-text) 6%, transparent);
+  border: 1px solid var(--ui-border);
+}
+
+.seg button {
+  border: 0;
+  background: transparent;
+  padding: 5px 10px;
+  border-radius: 6.5px;
+  font-size: 12px;
+  color: var(--ui-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: background .12s ease, color .12s ease;
+}
+.seg button:hover { color: var(--ui-text); }
+.seg button[aria-pressed=true] {
+  background: var(--ui-elevated);
+  color: var(--ui-text);
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgb(0 0 0 / .12);
+}
+.seg button em {
+  font-style: normal;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--ui-tag-ref);
+  color: var(--ui-accent);
+}
+
+.scene-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--ui-border);
+  background: color-mix(in srgb, var(--ui-text) 4%, transparent);
+  font-size: 12px;
+  color: var(--ui-muted);
+}
+.scene-select select {
+  border: 0;
+  background: transparent;
+  color: var(--ui-text);
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+/* Split comparison layout */
+.workspace-compare {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 20px 20px 42px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.compare-lane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lane-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 0 4px;
+}
+
+.lane-tag {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.lane-tag.is-baseline {
+  background: var(--ui-tag-base);
+  color: var(--ui-muted);
+}
+.lane-tag.is-refined {
+  background: var(--ui-tag-ref);
+  color: var(--ui-accent);
+}
+
+.lane-meta p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ui-muted);
+}
+.lane-meta code, .note-item code {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ui-text) 7%, transparent);
+  color: var(--ui-text);
+}
+
+.stage-box {
+  position: relative;
+  min-height: 236px;
+  border-radius: 16px;
+  border: 1px solid var(--ui-border);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  isolation: isolate;
+}
+
+.stage-bg {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: url('../materials/reference/context-dark.png');
+  background-size: cover;
+  background-position: center 46%;
+}
+body[data-theme=light] .stage-bg {
+  background-image: url('../materials/reference/context-light.png');
+}
+
+.stage-mount {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px 12px;
+}
+
+/* Keep switcher embedded inside demo stage instead of fullscreen fixed overlay */
+.stage-mount .dsh-switcher,
+.immersive-mount .dsh-switcher {
+  position: relative;
+  inset: auto;
+  z-index: 1;
+  width: 100%;
+}
+.stage-mount .dsh-switcher-panel {
+  width: min(var(--sw-width, 942px), calc(100vw - 64px));
+}
+
+.notes-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+.note-item {
+  padding: 14px 15px;
+  border-radius: 12px;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+}
+.note-item h3 {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ui-text);
+}
+.note-item p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--ui-muted);
+}
+
+/* Immersive single-overlay stage */
+.immersive-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image: url('../materials/reference/context-dark.png');
+  background-size: cover;
+  background-position: center;
+}
+body[data-theme=light] .immersive-backdrop {
+  background-image: url('../materials/reference/context-light.png');
+}
+body[data-view=immersive] .immersive-backdrop { display: block; }
+
+.immersive-stage {
+  min-height: calc(100vh - 58px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px 84px;
+}
+.immersive-mount {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.immersive-hud {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--ui-border);
+  background: color-mix(in srgb, var(--ui-bg) 82%, transparent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  font-size: 12px;
+  color: var(--ui-muted);
+}
+.hold-btn {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-elevated);
+  color: var(--ui-text);
+  padding: 4px 10px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.hold-btn[aria-pressed=true] {
+  border-color: var(--ui-accent);
+  color: var(--ui-accent);
+}
+
+/* ==========================================================================
+   TYPOGRAPHY & SURFACE REFINEMENT CANDIDATES
+   Preserves 01「分签」layout, 942×190 / 182×158 Dia geometry & 11「五拍」icons.
+   `data-typo="baseline"` stays 100% untouched production `src/plugin/switcher.css`.
+   ========================================================================== */
+
+.dsh-switcher[data-typo=crisp],
+.dsh-switcher[data-typo=medium],
+.dsh-switcher[data-typo=airy] {
+  --sw-tint: rgb(245 246 248 / .78);
+  --sw-edge: rgb(255 255 255 / .92);
+  --sw-card: rgb(255 255 255 / .28);
+  --sw-card-edge: rgb(24 32 46 / .055);
+  --sw-ink: #191c22;
+  --sw-title-idle: #333842;
+  --sw-project: #636b77;
+  --sw-project-selected: #252a32;
+  --sw-muted: #505763;
+  --sw-note: #78808c;
+  --sw-faint: #89909b;
+  --sw-cap: rgb(24 32 46 / .028);
+  --sw-rule: rgb(24 32 46 / .035);
+  --sw-selected: rgb(24 32 46 / .075);
+  --sw-selected-edge: rgb(24 32 46 / .16);
+  --sw-selected-cap: rgb(24 32 46 / .032);
+  --sw-lift: 0 1px 2px rgb(20 24 32 / .05), 0 6px 16px rgb(20 24 32 / .06), inset 0 1px rgb(255 255 255 / .42);
+}
+
+.dsh-switcher[data-theme=dark]:is([data-typo=crisp], [data-typo=medium], [data-typo=airy]) {
+  --sw-tint: rgb(25 26 29 / .82);
+  --sw-edge: rgb(255 255 255 / .105);
+  --sw-card: rgb(255 255 255 / .024);
+  --sw-card-edge: rgb(255 255 255 / .05);
+  --sw-ink: #f3f4f6;
+  --sw-title-idle: #d7dbe2;
+  --sw-project: #949ba7;
+  --sw-project-selected: #e5e8ed;
+  --sw-muted: #b0b6c0;
+  --sw-note: #828995;
+  --sw-faint: #767d89;
+  --sw-cap: rgb(255 255 255 / .02);
+  --sw-rule: rgb(255 255 255 / .032);
+  --sw-selected: rgb(255 255 255 / .105);
+  --sw-selected-edge: rgb(255 255 255 / .16);
+  --sw-selected-cap: rgb(255 255 255 / .03);
+}
+
+/* Keep status & excerpt distinct even on selected light card (fixes identical #5b626c merge) */
+.dsh-switcher[data-theme=light]:is([data-typo=crisp], [data-typo=medium], [data-typo=airy]) .dsh-switcher-card[aria-selected=true] {
+  --sw-muted: #434a55;
+  --sw-note: #6a727f;
+}
+
+/* Shared typographic discipline across A / B / C */
+.dsh-switcher:is([data-typo=crisp], [data-typo=medium], [data-typo=airy]) .dsh-switcher-project {
+  align-items: center;
+  font-size: 11.5px;
+  line-height: 18px;
+  font-weight: 400;
+  letter-spacing: .01em;
+  color: var(--sw-project);
+}
+
+.dsh-switcher:is([data-typo=crisp], [data-typo=medium], [data-typo=airy]) .dsh-switcher-card[aria-selected=true] .dsh-switcher-project {
+  font-weight: 500;
+  color: var(--sw-project-selected);
+}
+
+.dsh-switcher:is([data-typo=crisp], [data-typo=medium], [data-typo=airy]) .dsh-switcher-here {
+  font-size: 10px;
+  line-height: 15px;
+  font-weight: 400;
+  letter-spacing: .02em;
+  color: var(--sw-muted);
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--sw-ink) 6%, transparent);
+}
+
+.dsh-switcher:is([data-typo=crisp], [data-typo=medium], [data-typo=airy]) .dsh-switcher-title {
+  padding-top: 2px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  letter-spacing: .04px;
+  color: var(--sw-title-idle);
+  /* Disable balance on left-aligned narrow cards so 11-char titles fit 1 line and lines fill cleanly */
+  text-wrap: wrap !important;
+}
+
+.dsh-switcher:is([data-typo=crisp], [data-typo=medium], [data-typo=airy]) .dsh-switcher-card[aria-selected=true] .dsh-switcher-title {
+  font-weight: 500;
+  color: var(--sw-ink);
+}
+
+.dsh-switcher:is([data-typo=crisp], [data-typo=medium], [data-typo=airy]) .dsh-switcher-status {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--sw-muted);
+}
+
+/* Active status uses 500 Medium instead of 550 so CJK never snaps to 600 Semibold */
+.dsh-switcher:is([data-typo=crisp], [data-typo=medium], [data-typo=airy]) .dsh-switcher-status:not([data-status=idle]) .dsh-switcher-status-label {
+  font-weight: 500;
+}
+
+.dsh-switcher:is([data-typo=crisp], [data-typo=medium], [data-typo=airy]) .dsh-switcher-excerpt {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--sw-note);
+}
+
+/* Variant B: Constant 500 Medium on titles + luminosity hierarchy + seamless cap without hard line */
+.dsh-switcher[data-typo=medium] {
+  --sw-title-idle: #434954;
+  --sw-rule: transparent;
+}
+.dsh-switcher[data-theme=dark][data-typo=medium] {
+  --sw-title-idle: #c6ccd6;
+  --sw-rule: transparent;
+}
+.dsh-switcher[data-typo=medium] .dsh-switcher-title {
+  font-weight: 500;
+}
+.dsh-switcher[data-typo=medium] .dsh-switcher-card[aria-selected=true] .dsh-switcher-title {
+  font-weight: 500;
+  color: var(--sw-ink);
+}
+
+/* Variant C: Compact 13.5px desktop HUD density + crisp elevated light-mode selection */
+.dsh-switcher[data-typo=airy] {
+  --sw-rule: transparent;
+}
+.dsh-switcher[data-theme=light][data-typo=airy] {
+  --sw-tint: rgb(236 239 243 / .80);
+  --sw-card: rgb(255 255 255 / .30);
+  --sw-card-edge: rgb(24 32 46 / .05);
+  --sw-selected: rgb(255 255 255 / .86);
+  --sw-selected-edge: rgb(24 32 46 / .12);
+  --sw-selected-cap: rgb(24 32 46 / .028);
+  --sw-lift: 0 2px 6px rgb(20 26 36 / .06), 0 10px 22px rgb(20 26 36 / .06), inset 0 1px rgb(255 255 255 / .95);
+}
+.dsh-switcher[data-typo=airy] .dsh-switcher-project {
+  font-size: 11px;
+}
+.dsh-switcher[data-typo=airy] .dsh-switcher-title {
+  font-size: 13.5px;
+  line-height: 19.5px;
+  letter-spacing: .08px;
+}
+
+@media (prefers-contrast: more) {
+  .dsh-switcher:is([data-typo=crisp], [data-typo=medium], [data-typo=airy]) {
+    --sw-title-idle: var(--sw-ink);
+    --sw-project: var(--sw-ink);
+    --sw-project-selected: var(--sw-ink);
+    --sw-note: var(--sw-ink);
+  }
+}
+
+@media (max-width: 820px) {
+  .notes-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .topbar { padding: 10px 14px; }
+  .workspace-compare { padding: 14px 12px 32px; }
+  .stage-mount .dsh-switcher-panel { width: min(var(--sw-width, 942px), calc(100vw - 44px)); }
+}
+
+@media (max-width: 520px) {
+  .notes-grid { grid-template-columns: 1fr; }
+  .seg { flex-wrap: wrap; }
+}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readHistory, remember, candidates, SwitchCycle, latestUserInput, hasDraft, sessionPresentation, sessionWorkspaceName, sessionTimestamp, relativeTime, phraseBreaks } from '../src/plugin/core.js';
+import { readHistory, remember, candidates, SwitchCycle, latestUserInput, hasDraft, sessionPresentation, sessionWorkspaceName, sessionTimestamp, relativeTime, phraseBreaks, PREFS_KEY, DEFAULT_PREFS, normalizePrefs, readPrefs, isStatusFirstEdition, usesLensMotion, createPrefsStore } from '../src/plugin/core.js';
 
 test('MRU survives malformed storage and only contains unique ids', () => {
   assert.deepEqual(readHistory('{'), []);
@@ -119,4 +119,47 @@ test('workspace title follows authoritative membership and falls back to directo
   assert.equal(sessionWorkspaceName(snapshot, 'd', {}), '未分组');
   assert.equal(sessionWorkspaceName({ items: [{ title: ' ', path: '/code/fallback/', sessionIds: ['a'] }] }, 'a'), 'fallback');
   assert.equal(sessionWorkspaceName({}, 'a'), '未分组');
+});
+
+test('preferences validate safely, persist to storage, and sync across updates', () => {
+  assert.deepEqual(DEFAULT_PREFS, { edition: 'kibutsu', motion: 'balanced' });
+  assert.deepEqual(readPrefs(''), { edition: 'kibutsu', motion: 'balanced' });
+  assert.deepEqual(readPrefs('{broken'), { edition: 'kibutsu', motion: 'balanced' });
+  assert.deepEqual(normalizePrefs({ edition: 'unknown', motion: 'orbital' }), { edition: 'kibutsu', motion: 'orbital' });
+  assert.deepEqual(normalizePrefs({ edition: 'split', motion: 'invalid' }), { edition: 'split', motion: 'balanced' });
+
+  for (const ed of ['kibutsu', 'sujian', 'jiechi', 'moyun']) assert.equal(isStatusFirstEdition(ed), true);
+  assert.equal(isStatusFirstEdition('b2'), false);
+  assert.equal(isStatusFirstEdition('split'), false);
+
+  assert.equal(usesLensMotion('kibutsu', 'balanced'), true);
+  assert.equal(usesLensMotion('b2', 'running-only'), true);
+  assert.equal(usesLensMotion('split', 'classic'), false);
+  assert.equal(usesLensMotion('kibutsu', 'off'), false);
+
+  const map = new Map();
+  const storage = { getItem: k => map.get(k) ?? null, setItem: (k, v) => map.set(k, v) };
+  const store = createPrefsStore(storage);
+  let notifications = 0;
+  const unsub = store.subscribe(() => notifications++);
+  assert.deepEqual(store.getSnapshot(), { edition: 'kibutsu', motion: 'balanced' });
+
+  store.update({ edition: 'moyun' });
+  assert.equal(notifications, 1);
+  assert.deepEqual(JSON.parse(map.get(PREFS_KEY)), { edition: 'moyun', motion: 'balanced' });
+
+  // No-op update does not re-notify.
+  store.update({ edition: 'moyun' });
+  assert.equal(notifications, 1);
+
+  // External storage mutation syncs cleanly.
+  map.set(PREFS_KEY, JSON.stringify({ edition: 'b2', motion: 'running-only' }));
+  store.sync();
+  assert.equal(notifications, 2);
+  assert.deepEqual(store.getSnapshot(), { edition: 'b2', motion: 'running-only' });
+
+  store.reset();
+  assert.equal(notifications, 3);
+  assert.deepEqual(store.getSnapshot(), DEFAULT_PREFS);
+  unsub();
 });

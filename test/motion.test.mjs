@@ -54,3 +54,30 @@ test('reduced motion settles shapes and preserves the coexisting draft badge', t
   assert.equal(svg.children[8].attributes.get('opacity'), '0'); assert.equal(f.frames.size, 0);
   motion.destroy();
 });
+
+test('attention-budget modes control approval animation, orbital arcs, and live setMode', t => {
+  const f = environment(t);
+  const runningOnly = createFivebeatMotion('running-only');
+  const approvalHost = f.element();
+  runningOnly.mount(approvalHost, 'approval', false);
+  assert.equal(f.frames.size, 0, 'running-only leaves approval completely static');
+  runningOnly.destroy();
+
+  const balanced = createFivebeatMotion('balanced');
+  const aHost = f.element(), iHost = f.element(), rHost = f.element();
+  balanced.mount(iHost, 'idle', false);
+  assert.equal(f.frames.size, 0, 'idle schedules no frames in balanced mode');
+  balanced.mount(aHost, 'approval', false);
+  assert.equal(f.frames.size, 1, 'approval breathes in balanced mode');
+  balanced.mount(rHost, 'running', false);
+
+  // Switch live to orbital, then off.
+  balanced.setMode('orbital');
+  f.tick(performance.now() + 24);
+  const arcD = rHost.children[0].children[1].attributes.get('d');
+  assert.ok(arcD.split(' ').length > 4, 'orbital mode draws multi-segment chasing arcs');
+
+  balanced.setMode('off');
+  assert.equal(f.frames.size, 0, 'switching to off cancels the RAF loop immediately');
+  balanced.destroy();
+});
