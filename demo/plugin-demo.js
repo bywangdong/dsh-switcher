@@ -21,6 +21,20 @@ if (params.get('scene') === 'quiet') {
   data.forEach((row, i) => Object.assign(row, { kind: 'idle', label: '会话已就绪', draft: false, title: titles[i],
     workspaceName: i === 2 ? 'dsh-shortcutter' : 'Agent' }));
 }
+if (params.get('scene') === 'screenshot') {
+  const shot = [
+    { title: '人民币兑里拉汇率查询', workspaceName: 'Agent', days: 2 },
+    { title: '讨论导航态快捷键选择', workspaceName: 'dsh-shortcutter', days: 5 },
+    { title: '电脑软件删除优先级评估', workspaceName: 'Agent', days: 5 },
+    { title: '石头扫地机支持米家接入', workspaceName: 'Agent', days: 6 },
+    { title: '在无影云电脑上安装 Omarchy', workspaceName: 'Agent', days: 6 },
+  ];
+  data.forEach((row, i) => Object.assign(row, {
+    kind: 'idle', label: '会话已就绪', draft: false,
+    title: shot[i].title, workspaceName: shot[i].workspaceName,
+    updatedAt: new Date(Date.now() - shot[i].days * 24 * 3600000).toISOString(),
+  }));
+}
 if (params.get('scene') === 'real') {
   try {
     const response = await fetch('./design-lab/private/codex-conversations.json', { cache: 'no-store' });
@@ -43,10 +57,11 @@ if (params.get('scene') === 'stress') {
 }
 
 const prefsStore = createPrefsStore(typeof localStorage !== 'undefined' ? localStorage : undefined);
-if (params.has('edition') || params.has('motion')) {
+if (params.has('edition') || params.has('motion') || params.has('ink')) {
   prefsStore.update({
     ...(params.has('edition') ? { edition: params.get('edition') } : {}),
     ...(params.has('motion') ? { motion: params.get('motion') } : {}),
+    ...(params.has('ink') ? { ink: params.get('ink') } : {}),
   });
 }
 
@@ -99,7 +114,35 @@ window.addEventListener('keydown', event => {
 document.body.dataset.backdrop = params.get('backdrop') === 'reference' ? 'reference' : 'fixture';
 document.body.dataset.clean = String(params.get('clean') === '1');
 publish();
-if (params.get('view') !== 'settings') controller.begin(params.get('first') === '1' ? 0 : 1, true);
+
+if (params.get('compare') === 'ink') {
+  controller.cancel();
+  const stack = document.createElement('div');
+  stack.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:16px;';
+  for (const [inkId, tag] of [
+    ['soft', '0.1.11 原版 · 清隽细体 (soft)'],
+    ['crisp', '0.1.12 候选 A · 清晰实色 (crisp：未选中 400 · 选中 500)'],
+    ['medium', '0.1.12 候选 B · 凝实中黑 (medium：全卡 500 中黑)'],
+  ]) {
+    const rowWrap = document.createElement('div');
+    rowWrap.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start;gap:4px;';
+    const badge = document.createElement('div');
+    badge.style.cssText = 'padding:2px 8px;border-radius:6px;font:500 11px/16px -apple-system,"PingFang SC",sans-serif;background:rgb(15 17 21/.72);color:#f9fafb;backdrop-filter:blur(8px);';
+    badge.textContent = tag;
+    const slot = document.createElement('div');
+    rowWrap.append(badge, slot);
+    stack.append(rowWrap);
+    const subHost = {
+      ...host,
+      prefs: () => ({ ...prefsStore.getSnapshot(), edition: params.get('edition') || 'kibutsu', ink: inkId }),
+    };
+    const sub = mountSwitcher(slot, subHost, { inline: true });
+    sub.begin(1, true);
+  }
+  document.body.append(stack);
+} else if (params.get('view') !== 'settings') {
+  controller.begin(params.get('first') === '1' ? 0 : 1, true);
+}
 
 if (params.get('selftest') === '1') {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -128,6 +171,7 @@ if (params.get('selftest') === '1') {
     out.panelWidth = Math.round(overlayPanel.getBoundingClientRect().width);
     out.lensTransform = lens?.style.transform || '';
     out.settingsEditions = document.querySelectorAll('#settings-mount [data-edition-opt]').length;
+    out.settingsInks = document.querySelectorAll('#settings-mount [data-ink-opt]').length;
     out.settingsMotions = document.querySelectorAll('#settings-mount [data-motion-opt]').length;
     out.inlinePreviewCards = document.querySelectorAll('#settings-mount .dsh-switcher-card').length;
     if (params.get('view') === 'settings') controller.cancel();

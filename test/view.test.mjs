@@ -119,6 +119,7 @@ test('mountSwitcher switches cleanly across Status-First, B2, and Split editions
   const overlay = container.children[0];
   assert.equal(overlay.dataset.edition, 'kibutsu');
   assert.equal(overlay.dataset.motion, 'balanced');
+  assert.equal(overlay.dataset.ink, 'crisp');
   assert.equal(overlay.dataset.lens, 'true');
 
   // Status-First (`kibutsu`) has no excerpt and no `当前` badge; status is the 1st child of each card.
@@ -148,11 +149,12 @@ test('mountSwitcher switches cleanly across Status-First, B2, and Split editions
   assert.equal(env.findAll(overlay, n => n.className === 'dsh-switcher-excerpt').length, 3);
   assert.equal(env.findAll(overlay, n => n.className === 'dsh-switcher-here').length, 0);
 
-  // Switch live to Split + Classic: classic cap + `当前` badge, lens disabled.
-  prefs.update({ edition: 'split', motion: 'classic' });
+  // Switch live to Split + Classic + Medium ink: classic cap + `当前` badge, lens disabled.
+  prefs.update({ edition: 'split', motion: 'classic', ink: 'medium' });
   env.flushFrames();
   assert.equal(overlay.dataset.edition, 'split');
   assert.equal(overlay.dataset.motion, 'classic');
+  assert.equal(overlay.dataset.ink, 'medium');
   assert.equal(overlay.dataset.lens, undefined);
   assert.equal(env.findAll(overlay, n => n.className === 'dsh-switcher-here').length, 3);
 
@@ -160,7 +162,7 @@ test('mountSwitcher switches cleanly across Status-First, B2, and Split editions
   assert.equal(container.children.length, 0);
 });
 
-test('mountSettingsPanel renders 6 editions, 5 motions, and isolated inline preview', t => {
+test('mountSettingsPanel renders 6 editions, 3 ink modes, 5 motions, and isolated inline preview', t => {
   const env = domEnvironment(t);
   const prefs = createPrefsStore();
   const container = new env.Node();
@@ -174,8 +176,10 @@ test('mountSettingsPanel renders 6 editions, 5 motions, and isolated inline prev
   });
 
   const editionBtns = env.findAll(container, n => Boolean(n.dataset?.editionOpt));
+  const inkBtns = env.findAll(container, n => Boolean(n.dataset?.inkOpt));
   const motionBtns = env.findAll(container, n => Boolean(n.dataset?.motionOpt));
   assert.equal(editionBtns.length, 6);
+  assert.equal(inkBtns.length, 3);
   assert.equal(motionBtns.length, 5);
 
   const inlineOverlay = env.findAll(container, n => n.className === 'dsh-switcher')[0];
@@ -183,12 +187,18 @@ test('mountSettingsPanel renders 6 editions, 5 motions, and isolated inline prev
   assert.equal(inlineOverlay.dataset.shortcutModal, undefined, 'inline preview must not block Ctrl+Tab');
   assert.equal(inlineOverlay.getAttribute('aria-modal'), null);
 
-  // Clicking an edition radio button updates prefs and the inline preview immediately.
+  // Clicking an edition or ink radio button updates prefs and the inline preview immediately.
   const jiechiBtn = editionBtns.find(b => b.dataset.editionOpt === 'jiechi');
   jiechiBtn.dispatchEvent(new Event('click'));
   assert.equal(prefs.getSnapshot().edition, 'jiechi');
   assert.equal(jiechiBtn.getAttribute('aria-checked'), 'true');
   assert.equal(inlineOverlay.dataset.edition, 'jiechi');
+
+  const mediumBtn = inkBtns.find(b => b.dataset.inkOpt === 'medium');
+  mediumBtn.dispatchEvent(new Event('click'));
+  assert.equal(prefs.getSnapshot().ink, 'medium');
+  assert.equal(mediumBtn.getAttribute('aria-checked'), 'true');
+  assert.equal(inlineOverlay.dataset.ink, 'medium');
 
   const openBtn = env.findAll(container, n => n.dataset?.action === 'open-overlay')[0];
   openBtn.dispatchEvent(new Event('click'));

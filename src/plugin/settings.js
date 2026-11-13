@@ -1,4 +1,4 @@
-import { EDITION_OPTIONS, MOTION_OPTIONS, DEFAULT_PREFS, sessionPresentation } from './core.js';
+import { EDITION_OPTIONS, MOTION_OPTIONS, INK_OPTIONS, DEFAULT_PREFS, sessionPresentation } from './core.js';
 import { mountSwitcher } from './view.js';
 
 export function mountSettingsPanel(container, options = {}) {
@@ -70,6 +70,7 @@ export function mountSettingsPanel(container, options = {}) {
   }
 
   const editionGroup = createOptionGroup('卡片版式与信息组织', EDITION_OPTIONS, 'editionOpt', id => prefs.update({ edition: id }));
+  const inkGroup = createOptionGroup('文字浓淡与字重', INK_OPTIONS, 'inkOpt', id => prefs.update({ ink: id }));
   const motionGroup = createOptionGroup('状态图标与切换动效', MOTION_OPTIONS, 'motionOpt', id => prefs.update({ motion: id }));
 
   const previewWrap = document.createElement('div'); previewWrap.className = 'dsh-cfg-preview';
@@ -84,7 +85,7 @@ export function mountSettingsPanel(container, options = {}) {
   const stage = document.createElement('div'); stage.className = 'dsh-cfg-stage';
   previewWrap.append(previewBar, stage);
 
-  root.append(head, editionGroup.group, motionGroup.group, previewWrap);
+  root.append(head, editionGroup.group, inkGroup.group, motionGroup.group, previewWrap);
   container.append(root);
 
   const now = Date.now();
@@ -143,6 +144,11 @@ export function mountSettingsPanel(container, options = {}) {
       btn.setAttribute('aria-checked', String(checked));
       btn.tabIndex = checked ? 0 : -1;
     }
+    for (const [id, btn] of inkGroup.buttons) {
+      const checked = id === snap.ink;
+      btn.setAttribute('aria-checked', String(checked));
+      btn.tabIndex = checked ? 0 : -1;
+    }
     for (const [id, btn] of motionGroup.buttons) {
       const checked = id === snap.motion;
       btn.setAttribute('aria-checked', String(checked));
@@ -150,11 +156,13 @@ export function mountSettingsPanel(container, options = {}) {
     }
 
     const edMeta = EDITION_OPTIONS.find(o => o.id === snap.edition) || EDITION_OPTIONS[0];
+    const inkMeta = INK_OPTIONS.find(o => o.id === snap.ink) || INK_OPTIONS[0];
     const moMeta = MOTION_OPTIONS.find(o => o.id === snap.motion) || MOTION_OPTIONS[0];
     editionGroup.detail.textContent = edMeta.detail;
+    inkGroup.detail.textContent = inkMeta.detail;
     motionGroup.detail.textContent = moMeta.detail;
 
-    const isDefault = snap.edition === DEFAULT_PREFS.edition && snap.motion === DEFAULT_PREFS.motion;
+    const isDefault = snap.edition === DEFAULT_PREFS.edition && snap.motion === DEFAULT_PREFS.motion && snap.ink === DEFAULT_PREFS.ink;
     resetBtn.disabled = isDefault;
 
     if (openBtn) {

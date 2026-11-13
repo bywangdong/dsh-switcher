@@ -18,8 +18,14 @@
   --sw-blue: #42658f; --sw-amber: #80612f; --sw-opaque: #f1f3f5;
   --sw-shadow: 0 24px 60px rgb(28 32 40 / .16), 0 6px 16px rgb(28 32 40 / .06), 0 0 0 .5px rgb(28 32 40 / .1);
   position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center;
-  color: var(--sw-ink); font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
-  -webkit-font-smoothing: antialiased; pointer-events: auto; outline: none; isolation: isolate;
+  color: var(--sw-ink); font-family: var(--dsw-font-family, -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif);
+  -webkit-font-smoothing: auto; pointer-events: auto; outline: none; isolation: isolate;
+}
+
+.dsh-switcher[data-theme=dark],
+.dsh-switcher[data-ink=soft],
+.dsh-switcher[data-edition=split] {
+  -webkit-font-smoothing: antialiased;
 }
 
 .dsh-switcher[data-theme=dark] {
@@ -118,13 +124,13 @@
 .dsh-ws-chip {
   display: inline-flex; align-items: center; gap: 4.5px; min-width: 0; max-width: 100%;
   height: 20px; padding: 0 7.5px 0 5.5px; margin-left: -1px; border-radius: 999px;
-  font-size: 11px; line-height: 15px; font-weight: 400; letter-spacing: .01em;
+  font-size: 11.5px; line-height: 15px; font-weight: 400; letter-spacing: .01em;
   background: var(--sw-pill-bg); box-shadow: inset 0 0 0 .75px var(--sw-pill-edge); color: var(--sw-pill-ink);
   transition: background-color .15s ease-out, box-shadow .15s ease-out, color .15s ease-out;
 }
 .dsh-ws-chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dsh-ws-icon { width: 11.5px; height: 11.5px; flex: none; opacity: .66; }
-.dsh-ws-icon svg { display: block; width: 11.5px; height: 11.5px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.dsh-ws-icon { width: 11.5px; height: 11.5px; flex: none; opacity: .78; }
+.dsh-ws-icon svg { display: block; width: 11.5px; height: 11.5px; fill: none; stroke: currentColor; stroke-width: 1.45; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ==========================================================================
    DSH-Native Status-First Family (`kibutsu`, `sujian`, `jiechi`, `moyun`)
@@ -132,55 +138,59 @@
    ========================================================================== */
 
 .dsh-switcher:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun]) {
-  --sw-tint: rgb(237 239 241 / .84);
-  --sw-edge: rgb(255 255 255 / .9);
+  --sw-tint: rgb(235 237 240 / .86);
+  --sw-edge: rgb(255 255 255 / .92);
   --sw-sheen: none;
-  --sw-card: rgb(255 255 255 / .34);
-  --sw-card-edge: rgb(24 28 36 / .055);
-  --sw-selected: rgb(24 28 36 / .07);
-  --sw-selected-edge: rgb(24 28 36 / .15);
-  --sw-lift: 0 1px 2px rgb(24 28 36 / .05), 0 5px 14px rgb(24 28 36 / .06), inset 0 1px rgb(255 255 255 / .22);
-  --sw-ink: #1b1d21;
-  --sw-title-idle: #3a3d43;
-  --sw-status-idle: #71757c;
-  --sw-icon-idle: #8a8e95;
-  --sw-draft-ink: #50545b;
-  --sw-blue: #4569d0;
-  --sw-amber: #96681c;
-  --sw-pill-bg: rgb(24 28 36 / .045);
-  --sw-pill-edge: rgb(24 28 36 / .075);
-  --sw-pill-ink: #5f636b;
-  --sw-pill-sel-bg: rgb(255 255 255 / .62);
-  --sw-pill-sel-edge: rgb(24 28 36 / .12);
-  --sw-pill-sel-ink: #1f2227;
-  --sw-divider: rgb(24 28 36 / .08);
+  --sw-card: rgb(255 255 255 / .5);
+  --sw-card-edge: rgb(20 24 32 / .068);
+  --sw-selected: rgb(20 24 32 / .082);
+  --sw-selected-edge: rgb(20 24 32 / .18);
+  --sw-lift: 0 1px 2px rgb(20 24 32 / .05), 0 5px 14px rgb(20 24 32 / .06), inset 0 1px rgb(255 255 255 / .24);
+  --sw-ink: #0f1115;
+  --sw-title-idle: #16191f;
+  --sw-status-idle: #4d525b;
+  --sw-status-sel-idle: #3b4048;
+  --sw-icon-idle: #626771;
+  --sw-icon-sel-idle: #4a4f58;
+  --sw-draft-ink: #343942;
+  --sw-blue: #2d58cf;
+  --sw-amber: #87550a;
+  --sw-pill-bg: rgb(20 24 32 / .058);
+  --sw-pill-edge: rgb(20 24 32 / .098);
+  --sw-pill-ink: #434851;
+  --sw-pill-sel-bg: rgb(255 255 255 / .78);
+  --sw-pill-sel-edge: rgb(20 24 32 / .14);
+  --sw-pill-sel-ink: #0f1115;
+  --sw-divider: rgb(20 24 32 / .09);
   --sw-opaque: #eef0f2;
-  --sw-shadow: 0 24px 60px rgb(24 28 36 / .15), 0 6px 16px rgb(24 28 36 / .06), 0 0 0 .5px rgb(24 28 36 / .1);
+  --sw-shadow: 0 24px 60px rgb(20 24 32 / .15), 0 6px 16px rgb(20 24 32 / .06), 0 0 0 .5px rgb(20 24 32 / .11);
 }
 
 .dsh-switcher:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun])[data-theme=dark] {
-  --sw-tint: rgb(37 38 41 / .84);
-  --sw-edge: rgb(255 255 255 / .09);
+  --sw-tint: rgb(36 37 40 / .86);
+  --sw-edge: rgb(255 255 255 / .1);
   --sw-sheen: none;
-  --sw-card: rgb(255 255 255 / .028);
-  --sw-card-edge: rgb(255 255 255 / .05);
-  --sw-selected: rgb(255 255 255 / .1);
-  --sw-selected-edge: rgb(255 255 255 / .15);
-  --sw-lift: 0 1px 2px rgb(0 0 0 / .25), 0 8px 20px rgb(0 0 0 / .26), inset 0 1px rgb(255 255 255 / .05);
-  --sw-ink: #ecedee;
-  --sw-title-idle: #c6c8cc;
-  --sw-status-idle: #8a8d93;
-  --sw-icon-idle: #74777d;
-  --sw-draft-ink: #b4b7bc;
-  --sw-blue: #84a9f9;
-  --sw-amber: #d9b072;
-  --sw-pill-bg: rgb(255 255 255 / .045);
-  --sw-pill-edge: rgb(255 255 255 / .075);
-  --sw-pill-ink: #9a9da3;
-  --sw-pill-sel-bg: rgb(255 255 255 / .09);
-  --sw-pill-sel-edge: rgb(255 255 255 / .15);
-  --sw-pill-sel-ink: #e4e5e7;
-  --sw-divider: rgb(255 255 255 / .07);
+  --sw-card: rgb(255 255 255 / .034);
+  --sw-card-edge: rgb(255 255 255 / .06);
+  --sw-selected: rgb(255 255 255 / .115);
+  --sw-selected-edge: rgb(255 255 255 / .175);
+  --sw-lift: 0 1px 2px rgb(0 0 0 / .25), 0 8px 20px rgb(0 0 0 / .26), inset 0 1px rgb(255 255 255 / .055);
+  --sw-ink: #f9fafb;
+  --sw-title-idle: #eceef2;
+  --sw-status-idle: #acb2bb;
+  --sw-status-sel-idle: #c9cfd8;
+  --sw-icon-idle: #9197a1;
+  --sw-icon-sel-idle: #b1b7c1;
+  --sw-draft-ink: #d2d6dd;
+  --sw-blue: #84aeff;
+  --sw-amber: #e3b975;
+  --sw-pill-bg: rgb(255 255 255 / .058);
+  --sw-pill-edge: rgb(255 255 255 / .095);
+  --sw-pill-ink: #b6bcc6;
+  --sw-pill-sel-bg: rgb(255 255 255 / .12);
+  --sw-pill-sel-edge: rgb(255 255 255 / .18);
+  --sw-pill-sel-ink: #f7f8fa;
+  --sw-divider: rgb(255 255 255 / .085);
   --sw-opaque: #27282a;
   --sw-shadow: 0 28px 70px rgb(0 0 0 / .45), 0 6px 18px rgb(0 0 0 / .22), 0 0 0 .5px rgb(0 0 0 / .6);
 }
@@ -201,12 +211,18 @@
 }
 
 .dsh-switcher:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun]) .dsh-switcher-status {
-  height: 20px; gap: 5px; font-size: 11px; line-height: 16px; font-weight: 400;
+  height: 20px; gap: 5px; font-size: 11.5px; line-height: 16px; font-weight: 400;
   letter-spacing: .01em; font-variant-numeric: tabular-nums; color: var(--sw-status-idle);
   transition: color .22s ease-out, background-color .22s ease-out, box-shadow .22s ease-out, opacity .22s ease-out;
 }
 .dsh-switcher:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun]) .dsh-switcher-icon {
   color: var(--sw-icon-idle); transition: color .22s ease-out;
+}
+.dsh-switcher:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun]) .dsh-switcher-card[aria-selected=true] .dsh-switcher-status[data-status=idle] {
+  color: var(--sw-status-sel-idle);
+}
+.dsh-switcher:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun]) .dsh-switcher-card[aria-selected=true] .dsh-switcher-icon[data-status=idle] {
+  color: var(--sw-icon-sel-idle);
 }
 .dsh-switcher:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun]) .dsh-switcher-status[data-status=draft],
 .dsh-switcher:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun]) .dsh-switcher-icon[data-status=draft] {
@@ -286,7 +302,7 @@
 .dsh-switcher[data-edition=moyun] .dsh-switcher-card {
   height: 138px; grid-template-rows: 22px minmax(0, 1fr) 18px; gap: 6px; padding: 11px 10px 10px;
 }
-.dsh-switcher[data-edition=moyun] .dsh-switcher-status[data-status=idle] { opacity: .76; }
+.dsh-switcher[data-edition=moyun] .dsh-switcher-status[data-status=idle] { opacity: .92; }
 .dsh-switcher[data-edition=moyun] .dsh-switcher-status:not([data-status=idle]) {
   width: fit-content; max-width: 100%; height: 22px; padding: 0 8.5px 0 5px; margin-left: -3px;
   border-radius: 999px; background: color-mix(in srgb, currentColor 12%, transparent);
@@ -305,49 +321,49 @@
    ========================================================================== */
 
 .dsh-switcher[data-edition=b2] {
-  --sw-tint: rgb(237 239 241 / .84);
+  --sw-tint: rgb(235 237 240 / .86);
   --sw-edge: rgb(255 255 255 / .92);
   --sw-sheen: none;
-  --sw-card: rgb(255 255 255 / .34);
-  --sw-card-edge: rgb(24 28 36 / .055);
-  --sw-ink: #1b1d21;
-  --sw-title-idle: #3a3d43;
-  --sw-muted: #505763;
-  --sw-note: #747b86;
-  --sw-faint: #89909b;
-  --sw-blue: #4569d0;
-  --sw-amber: #96681c;
-  --sw-selected: rgb(24 28 36 / .07);
-  --sw-selected-edge: rgb(24 28 36 / .15);
-  --sw-pill-bg: rgb(24 28 36 / .045);
-  --sw-pill-edge: rgb(24 28 36 / .075);
-  --sw-pill-ink: #5f636b;
-  --sw-pill-sel-bg: rgb(255 255 255 / .62);
-  --sw-pill-sel-edge: rgb(24 28 36 / .12);
-  --sw-pill-sel-ink: #1f2227;
+  --sw-card: rgb(255 255 255 / .5);
+  --sw-card-edge: rgb(20 24 32 / .068);
+  --sw-ink: #0f1115;
+  --sw-title-idle: #16191f;
+  --sw-muted: #4b5059;
+  --sw-note: #5a606b;
+  --sw-faint: #6c727d;
+  --sw-blue: #2d58cf;
+  --sw-amber: #87550a;
+  --sw-selected: rgb(20 24 32 / .082);
+  --sw-selected-edge: rgb(20 24 32 / .18);
+  --sw-pill-bg: rgb(20 24 32 / .058);
+  --sw-pill-edge: rgb(20 24 32 / .098);
+  --sw-pill-ink: #434851;
+  --sw-pill-sel-bg: rgb(255 255 255 / .78);
+  --sw-pill-sel-edge: rgb(20 24 32 / .14);
+  --sw-pill-sel-ink: #0f1115;
   --sw-opaque: #eef0f2;
 }
 .dsh-switcher[data-edition=b2][data-theme=dark] {
-  --sw-tint: rgb(37 38 41 / .84);
-  --sw-edge: rgb(255 255 255 / .09);
+  --sw-tint: rgb(36 37 40 / .86);
+  --sw-edge: rgb(255 255 255 / .1);
   --sw-sheen: none;
-  --sw-card: rgb(255 255 255 / .028);
-  --sw-card-edge: rgb(255 255 255 / .05);
-  --sw-ink: #ecedee;
-  --sw-title-idle: #c6c8cc;
-  --sw-muted: #a6aab2;
-  --sw-note: #828791;
-  --sw-faint: #74777d;
-  --sw-blue: #84a9f9;
-  --sw-amber: #d9b072;
-  --sw-selected: rgb(255 255 255 / .1);
-  --sw-selected-edge: rgb(255 255 255 / .15);
-  --sw-pill-bg: rgb(255 255 255 / .045);
-  --sw-pill-edge: rgb(255 255 255 / .075);
-  --sw-pill-ink: #9a9da3;
-  --sw-pill-sel-bg: rgb(255 255 255 / .09);
-  --sw-pill-sel-edge: rgb(255 255 255 / .15);
-  --sw-pill-sel-ink: #e4e5e7;
+  --sw-card: rgb(255 255 255 / .034);
+  --sw-card-edge: rgb(255 255 255 / .06);
+  --sw-ink: #f9fafb;
+  --sw-title-idle: #eceef2;
+  --sw-muted: #b1b7c1;
+  --sw-note: #989ea8;
+  --sw-faint: #848a94;
+  --sw-blue: #84aeff;
+  --sw-amber: #e3b975;
+  --sw-selected: rgb(255 255 255 / .115);
+  --sw-selected-edge: rgb(255 255 255 / .175);
+  --sw-pill-bg: rgb(255 255 255 / .058);
+  --sw-pill-edge: rgb(255 255 255 / .095);
+  --sw-pill-ink: #b6bcc6;
+  --sw-pill-sel-bg: rgb(255 255 255 / .12);
+  --sw-pill-sel-edge: rgb(255 255 255 / .18);
+  --sw-pill-sel-ink: #f7f8fa;
   --sw-opaque: #27282a;
 }
 .dsh-switcher[data-edition=b2] .dsh-switcher-panel {
@@ -374,8 +390,69 @@
   background: var(--sw-pill-sel-bg); box-shadow: inset 0 0 0 .75px var(--sw-pill-sel-edge);
   color: var(--sw-pill-sel-ink); font-weight: 500;
 }
-.dsh-switcher[data-edition=b2] .dsh-switcher-status { font-variant-numeric: tabular-nums; }
+.dsh-switcher[data-edition=b2] .dsh-switcher-status { font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .dsh-switcher[data-edition=b2] .dsh-switcher-status:not([data-status=idle]) .dsh-switcher-status-label { font-weight: 500; }
+
+/* ==========================================================================
+   Ink & Weight Modes (`data-ink="crisp" | "medium" | "soft"`)
+   ========================================================================== */
+
+/* `medium` (凝实中黑): all card titles render in 500 Medium with slightly softened
+   unselected ink so surface + contrast still separate the selected card effortlessly. */
+.dsh-switcher[data-ink=medium]:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun], [data-edition=b2]) {
+  --sw-title-idle: #20242c;
+  --sw-status-idle: #454a53;
+  --sw-pill-ink: #3b4049;
+}
+.dsh-switcher[data-ink=medium][data-theme=dark]:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun], [data-edition=b2]) {
+  --sw-title-idle: #e6e8ed;
+  --sw-status-idle: #b6bcc6;
+  --sw-pill-ink: #c0c6d0;
+}
+.dsh-switcher[data-ink=medium]:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun], [data-edition=b2]) .dsh-switcher-title {
+  font-weight: 500;
+}
+.dsh-switcher[data-ink=medium]:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun], [data-edition=b2]) .dsh-ws-chip {
+  font-weight: 450;
+}
+
+/* `soft` (清隽细体): preserves 0.1.11 attenuated greyscale hierarchy for optional comparison */
+.dsh-switcher[data-ink=soft]:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun], [data-edition=b2]) {
+  --sw-card: rgb(255 255 255 / .34);
+  --sw-card-edge: rgb(24 28 36 / .055);
+  --sw-selected: rgb(24 28 36 / .07);
+  --sw-selected-edge: rgb(24 28 36 / .15);
+  --sw-ink: #1b1d21;
+  --sw-title-idle: #3a3d43;
+  --sw-status-idle: #71757c;
+  --sw-status-sel-idle: #71757c;
+  --sw-icon-idle: #8a8e95;
+  --sw-icon-sel-idle: #8a8e95;
+  --sw-pill-bg: rgb(24 28 36 / .045);
+  --sw-pill-edge: rgb(24 28 36 / .075);
+  --sw-pill-ink: #5f636b;
+  --sw-pill-sel-bg: rgb(255 255 255 / .62);
+  --sw-pill-sel-ink: #1f2227;
+}
+.dsh-switcher[data-ink=soft][data-theme=dark]:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun], [data-edition=b2]) {
+  --sw-card: rgb(255 255 255 / .028);
+  --sw-card-edge: rgb(255 255 255 / .05);
+  --sw-selected: rgb(255 255 255 / .1);
+  --sw-selected-edge: rgb(255 255 255 / .15);
+  --sw-ink: #ecedee;
+  --sw-title-idle: #c6c8cc;
+  --sw-status-idle: #8a8d93;
+  --sw-status-sel-idle: #8a8d93;
+  --sw-icon-idle: #74777d;
+  --sw-icon-sel-idle: #74777d;
+  --sw-pill-bg: rgb(255 255 255 / .045);
+  --sw-pill-edge: rgb(255 255 255 / .075);
+  --sw-pill-ink: #9a9da3;
+  --sw-pill-sel-bg: rgb(255 255 255 / .09);
+  --sw-pill-sel-ink: #e4e5e7;
+}
+.dsh-switcher[data-ink=soft] .dsh-switcher-status,
+.dsh-switcher[data-ink=soft] .dsh-ws-chip { font-size: 11px; }
 
 /* ==========================================================================
    Selection Lens & Motion Controls

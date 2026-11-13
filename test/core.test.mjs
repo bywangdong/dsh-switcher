@@ -122,11 +122,11 @@ test('workspace title follows authoritative membership and falls back to directo
 });
 
 test('preferences validate safely, persist to storage, and sync across updates', () => {
-  assert.deepEqual(DEFAULT_PREFS, { edition: 'kibutsu', motion: 'balanced' });
-  assert.deepEqual(readPrefs(''), { edition: 'kibutsu', motion: 'balanced' });
-  assert.deepEqual(readPrefs('{broken'), { edition: 'kibutsu', motion: 'balanced' });
-  assert.deepEqual(normalizePrefs({ edition: 'unknown', motion: 'orbital' }), { edition: 'kibutsu', motion: 'orbital' });
-  assert.deepEqual(normalizePrefs({ edition: 'split', motion: 'invalid' }), { edition: 'split', motion: 'balanced' });
+  assert.deepEqual(DEFAULT_PREFS, { edition: 'kibutsu', motion: 'balanced', ink: 'crisp' });
+  assert.deepEqual(readPrefs(''), { edition: 'kibutsu', motion: 'balanced', ink: 'crisp' });
+  assert.deepEqual(readPrefs('{broken'), { edition: 'kibutsu', motion: 'balanced', ink: 'crisp' });
+  assert.deepEqual(normalizePrefs({ edition: 'unknown', motion: 'orbital', ink: 'medium' }), { edition: 'kibutsu', motion: 'orbital', ink: 'medium' });
+  assert.deepEqual(normalizePrefs({ edition: 'split', motion: 'invalid', ink: 'invalid' }), { edition: 'split', motion: 'balanced', ink: 'crisp' });
 
   for (const ed of ['kibutsu', 'sujian', 'jiechi', 'moyun']) assert.equal(isStatusFirstEdition(ed), true);
   assert.equal(isStatusFirstEdition('b2'), false);
@@ -142,21 +142,21 @@ test('preferences validate safely, persist to storage, and sync across updates',
   const store = createPrefsStore(storage);
   let notifications = 0;
   const unsub = store.subscribe(() => notifications++);
-  assert.deepEqual(store.getSnapshot(), { edition: 'kibutsu', motion: 'balanced' });
+  assert.deepEqual(store.getSnapshot(), { edition: 'kibutsu', motion: 'balanced', ink: 'crisp' });
 
-  store.update({ edition: 'moyun' });
+  store.update({ edition: 'moyun', ink: 'medium' });
   assert.equal(notifications, 1);
-  assert.deepEqual(JSON.parse(map.get(PREFS_KEY)), { edition: 'moyun', motion: 'balanced' });
+  assert.deepEqual(JSON.parse(map.get(PREFS_KEY)), { edition: 'moyun', motion: 'balanced', ink: 'medium' });
 
   // No-op update does not re-notify.
-  store.update({ edition: 'moyun' });
+  store.update({ edition: 'moyun', ink: 'medium' });
   assert.equal(notifications, 1);
 
-  // External storage mutation syncs cleanly.
+  // External storage mutation (including 0.1.11 payloads without `ink`) syncs cleanly.
   map.set(PREFS_KEY, JSON.stringify({ edition: 'b2', motion: 'running-only' }));
   store.sync();
   assert.equal(notifications, 2);
-  assert.deepEqual(store.getSnapshot(), { edition: 'b2', motion: 'running-only' });
+  assert.deepEqual(store.getSnapshot(), { edition: 'b2', motion: 'running-only', ink: 'crisp' });
 
   store.reset();
   assert.equal(notifications, 3);

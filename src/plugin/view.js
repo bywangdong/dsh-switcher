@@ -56,6 +56,7 @@ export function mountSwitcher(container, host, options = {}) {
     if (!overlay) return;
     overlay.dataset.edition = prefs.edition;
     overlay.dataset.motion = prefs.motion;
+    overlay.dataset.ink = prefs.ink;
     if (usesLensMotion(prefs.edition, prefs.motion)) overlay.dataset.lens = 'true';
     else delete overlay.dataset.lens;
   }
@@ -173,8 +174,10 @@ export function mountSwitcher(container, host, options = {}) {
     let immediateSelection = false;
     if (nextPrefs.edition !== prefs.edition) {
       prefs = nextPrefs; applyPrefsAttributes(); buildCards(); immediateSelection = true;
-    } else if (nextPrefs.motion !== prefs.motion) {
-      prefs = nextPrefs; applyPrefsAttributes(); motion?.setMode(prefs.motion); immediateSelection = true;
+    } else if (nextPrefs.motion !== prefs.motion || nextPrefs.ink !== prefs.ink) {
+      const motionChanged = nextPrefs.motion !== prefs.motion;
+      prefs = nextPrefs; applyPrefsAttributes();
+      if (motionChanged) { motion?.setMode(prefs.motion); immediateSelection = true; }
     }
 
     const theme = host.theme(), current = host.current(), statusFirst = isStatusFirstEdition(prefs.edition);

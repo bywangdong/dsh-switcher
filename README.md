@@ -23,6 +23,10 @@ DeepSeek Harness 的 Ctrl + Tab 最近会话切换器。独立于 `dshMagicShort
   - **04 墨韵**：`138px` 活跃状态淡底胶囊 + 底部无框项目微标（不同卡双胶囊）。
   - **B2 轻胶囊**：`158px` 统一中性项目胶囊，保留四行 `项目 → 标题 → 状态 → 最后输入`。
   - **01 分签**：`158px` 经典顶栏题签，含「当前」标记与最后输入。
+- **文字浓淡与字重（3 选 1）**
+  - **清晰实色（默认）**：对齐 DSH 原生主文字黑度与字干渲染（亮色恢复 macOS 原生笔画浓度），状态与项目胶囊提亮；未选中 `400`、选中 `500`。
+  - **凝实中黑**：全部卡片标题均采用 `500` 中黑配高对比辅字，快速扫视最扎实省力。
+  - **清隽细体**：保留 0.1.11 清淡灰阶细体（未选中弱化），适合偏爱轻柔观感的屏幕。
 - **状态图标与切换动效（5 选 1）**
   - **动静异律（默认）**：选中底框 `160ms` 滑动；「运行中」五拍错相流光波，「待确认/待回应」静止外括弧 `[||]` 配 `2.6s` 慢呼吸光标，其余全静。
   - **仅运行动**：选中底框滑动；仅「运行中」波动，「待确认/待回应」保持纯静态高对比。
@@ -56,7 +60,7 @@ npm run build
 npm test
 npm run check
 npm run pack:local
-dsh plugin --profile desktop add /absolute/path/to/dsh-switcher/dist/dsh-switcher-0.1.11.tgz --offline --ignore-scripts
+dsh plugin --profile desktop add /absolute/path/to/dsh-switcher/dist/dsh-switcher-0.1.12.tgz --offline --ignore-scripts
 ```
 
 安装包只有客户端代码、空的宿主入口、插件补丁、包信息和说明。使用官方插件安装路径，不修改 DSH 应用包。针对 DSH **0.2.1-rc.2** 的公开客户端服务开发，目前本机验证平台为 macOS。

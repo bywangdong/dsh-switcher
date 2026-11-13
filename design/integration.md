@@ -120,3 +120,12 @@
 - `src/plugin/view.js`、`src/plugin/motion.js` 与 `src/plugin/switcher.css` 支持 6 套版式（默认 `kibutsu` 02 器物，及 `sujian` 01 素笺、`jiechi` 03 界尺、`moyun` 04 墨韵、`b2` 轻胶囊、`split` 01 分签）与 5 套动效模式（默认 `balanced` 动静异律，及 `running-only`、`orbital`、`classic`、`off`），偏好持久化于 `localStorage`（`dsh-switcher.prefs.v1`）并跨窗口同步。
 - 0.1.10 的 `01 分签` 样式快照归档于 `design/archive/session-split-0.1.10/`；过渡稿 `B2` 归档于 `design/archive/session-unified-pill/`；字体、分组与状态优先研究页分别保留在 `demo/typography/`、`demo/grouping/`、`demo/wabi/`。
 - 本轮完成构建、单元测试、语法与本地引用检查、`npm run test:install` Git/tarball 安装验证及浏览器 fixture 明暗/窄窗验证，并推送 `main` 供用户在真实 DSH 中安装体验；浏览器验证不代替真实 DSH 原生体验。
+
+## 0.1.12 · 字体清晰度与对比度修正 · 2026-11-13
+
+- 根据用户在真实 DSH 使用一天后的亮色实机截图反馈（"字体略清淡，看的有点费眼"），对比 DSH 官方 `ui-theme` 色阶定位四项叠加成因并修正：
+  1. 亮色移除强制 `-webkit-font-smoothing: antialiased` 削细（对齐 DSH 原生 CoreText 字干浓度，仅暗色/`soft`/`split` 启用灰度抗锯齿），并优先继承宿主 `--dsw-font-family`。
+  2. 未选中卡片标题由灰化 `#3a3d43` / `#c6c8cc` 提至接近原生主文字的实色 `#16191f`（亮）/ `#eceef2`（暗），选中卡 `#0f1115` / `#f9fafb` 配 `500` 字重；保留 `14px` 标题字号以确保 11 字中文单行不断行。
+  3. 状态行与项目胶囊升至 `11.5px` 并显著提升明暗对比度（含选中浅灰底上的独立加深状态色与五拍静止竖条 `.74` 不透明度）。
+  4. 在插件详情页新增 **「文字浓淡与字重」** 实时切换（默认 `crisp` 清晰实色、全卡 500 的 `medium` 凝实中黑、保留 0.1.11 灰阶的 `soft` 清隽细体）；已存 0.1.11 偏好的设备升级后自动获得默认 `crisp`。
+- 完成 26 项单元测试、`npm run check`、`npm run test:install`（Git 与 `.tgz`）及浏览器 fixture 明暗三档同屏对照、配置页与 480px 窄窗验证；真实 DSH 观感由用户升级体验确认。

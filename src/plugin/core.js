@@ -151,16 +151,24 @@ export const MOTION_OPTIONS = [
   { id: 'off', label: '全静', detail: '关闭所有状态图标循环与切换滑动过渡' },
 ];
 
-export const DEFAULT_PREFS = Object.freeze({ edition: 'kibutsu', motion: 'balanced' });
+export const INK_OPTIONS = [
+  { id: 'crisp', label: '清晰实色', badge: '默认', detail: '对齐 DSH 原生主文字黑度与字干渲染，状态与胶囊提亮，未选中 400 · 选中 500' },
+  { id: 'medium', label: '凝实中黑', detail: '全部卡片标题均采用 500 中黑配高对比辅字，快速扫视最扎实省力' },
+  { id: 'soft', label: '清隽细体', detail: '保留 0.1.11 清淡灰阶细体（未选中弱化），适合偏爱轻柔观感的屏幕' },
+];
+
+export const DEFAULT_PREFS = Object.freeze({ edition: 'kibutsu', motion: 'balanced', ink: 'crisp' });
 
 const EDITION_IDS = new Set(EDITION_OPTIONS.map(option => option.id));
 const MOTION_IDS = new Set(MOTION_OPTIONS.map(option => option.id));
+const INK_IDS = new Set(INK_OPTIONS.map(option => option.id));
 
 export function normalizePrefs(input) {
   const value = input && typeof input === 'object' ? input : {};
   return {
     edition: EDITION_IDS.has(value.edition) ? value.edition : DEFAULT_PREFS.edition,
     motion: MOTION_IDS.has(value.motion) ? value.motion : DEFAULT_PREFS.motion,
+    ink: INK_IDS.has(value.ink) ? value.ink : DEFAULT_PREFS.ink,
   };
 }
 
@@ -186,7 +194,7 @@ export function createPrefsStore(storage) {
     getSnapshot: () => state,
     update(patch) {
       const next = normalizePrefs({ ...state, ...patch });
-      if (next.edition === state.edition && next.motion === state.motion) return state;
+      if (next.edition === state.edition && next.motion === state.motion && next.ink === state.ink) return state;
       state = next;
       try { storage?.setItem(PREFS_KEY, JSON.stringify(state)); } catch { /* Memory fallback stays live. */ }
       notify();
@@ -196,7 +204,7 @@ export function createPrefsStore(storage) {
     sync() {
       let next = state;
       try { next = readPrefs(storage?.getItem(PREFS_KEY)); } catch { return state; }
-      if (next.edition === state.edition && next.motion === state.motion) return state;
+      if (next.edition === state.edition && next.motion === state.motion && next.ink === state.ink) return state;
       state = next; notify();
       return state;
     },

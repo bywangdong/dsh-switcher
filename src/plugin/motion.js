@@ -113,9 +113,9 @@ export function createFivebeatMotion(initialMode = 'classic') {
       ]);
     }
 
-    if (kind === 'unread') return padSlots([dot(7, 16, .28, 2.3), line(12, 16, 19, 16, .48, 1.75), dot(25, 16, 1, 3.8)]);
-    if (kind === 'draft') return padSlots([line(6, 12, 21, 12, .55, 1.6), line(6, 18, 15, 18, .55, 1.6), line(20, 23, 26, 17, .95, 2.1)]);
-    return padSlots([0, 1, 2, 3, 4].map(i => line(7 + i * 4.5, 13, 7 + i * 4.5, 19, .56, 1.8)));
+    if (kind === 'unread') return padSlots([dot(7, 16, .34, 2.35), line(12, 16, 19, 16, .56, 1.8), dot(25, 16, 1, 3.8)]);
+    if (kind === 'draft') return padSlots([line(6, 12, 21, 12, .64, 1.65), line(6, 18, 15, 18, .64, 1.65), line(20, 23, 26, 17, .98, 2.1)]);
+    return padSlots([0, 1, 2, 3, 4].map(i => line(7 + i * 4.5, 13, 7 + i * 4.5, 19, .74, 1.85)));
   }
 
   function draw(item, index) {
