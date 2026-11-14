@@ -1,6 +1,6 @@
 import { mountSwitcher } from '../src/plugin/view.js';
 import { mountSettingsPanel } from '../src/plugin/settings.js';
-import { remember, sessionPresentation, createPrefsStore } from '../src/plugin/core.js';
+import { remember, sessionPresentation, createPrefsStore, PREF_KEYS } from '../src/plugin/core.js';
 
 const params = new URLSearchParams(location.search);
 const data = [
@@ -35,6 +35,20 @@ if (params.get('scene') === 'screenshot') {
     updatedAt: new Date(Date.now() - shot[i].days * 24 * 3600000).toISOString(),
   }));
 }
+if (params.get('scene') === 'mixed' || params.get('compare') === 'focus') {
+  // The settings preview's rows: every status once, with one- and two-line titles.
+  const mixed = [
+    ['整理本周的发布检查清单', 'Agent', 'idle', 12],
+    ['节点稳定性与切换策略', 'proxyAutoSwitch', 'running', 2],
+    ['DSH 插件配置槽位接入验证', 'dsh-switcher', 'approval', 28],
+    ['打磨键盘导航与草稿恢复体验', 'dsh-shortcutter', 'draft', 95],
+    ['多工作区焦点与窄窗滚动回归', 'Agent', 'unread', 300],
+  ];
+  data.forEach((row, i) => {
+    const [title, workspaceName, kind, minutes] = mixed[i];
+    Object.assign(row, { title, workspaceName, kind, draft: kind === 'draft', updatedAt: new Date(Date.now() - minutes * 60000).toISOString() });
+  });
+}
 if (params.get('scene') === 'real') {
   try {
     const response = await fetch('./design-lab/private/codex-conversations.json', { cache: 'no-store' });
@@ -57,13 +71,8 @@ if (params.get('scene') === 'stress') {
 }
 
 const prefsStore = createPrefsStore(typeof localStorage !== 'undefined' ? localStorage : undefined);
-if (params.has('edition') || params.has('motion') || params.has('ink')) {
-  prefsStore.update({
-    ...(params.has('edition') ? { edition: params.get('edition') } : {}),
-    ...(params.has('motion') ? { motion: params.get('motion') } : {}),
-    ...(params.has('ink') ? { ink: params.get('ink') } : {}),
-  });
-}
+const prefOverrides = Object.fromEntries(PREF_KEYS.filter(key => params.has(key)).map(key => [key, params.get(key)]));
+if (Object.keys(prefOverrides).length) prefsStore.update(prefOverrides);
 
 let current = 'a', history = data.map(row => row.id), theme = params.get('theme') === 'dark' ? 'dark' : 'light';
 const listeners = new Set(), themeListeners = new Set();
@@ -115,15 +124,24 @@ document.body.dataset.backdrop = params.get('backdrop') === 'reference' ? 'refer
 document.body.dataset.clean = String(params.get('clean') === '1');
 publish();
 
-if (params.get('compare') === 'ink') {
+// Labelled rows of the same sessions, one per preference override, with nothing to choose.
+const comparisons = {
+  ink: [
+    ['0.1.11 原版 · 清隽细体 (soft)', { ink: 'soft' }],
+    ['0.1.12 候选 A · 清晰实色 (crisp：未选中 400 · 选中 500)', { ink: 'crisp' }],
+    ['0.1.12 候选 B · 凝实中黑 (medium：全卡 500 中黑)', { ink: 'medium' }],
+  ],
+  focus: [
+    ['旧默认 · 项目轻胶囊 / 运行中与新结果同蓝 / 标题两行同色', { project: 'chip', signal: 'classic', title: 'even' }],
+    ['现默认（推荐）· 项目纯文字 / 只标待处理 / 标题首行为主', { project: 'plain', signal: 'attention', title: 'lead' }],
+  ],
+};
+const comparison = comparisons[params.get('compare')];
+if (comparison) {
   controller.cancel();
   const stack = document.createElement('div');
   stack.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:16px;';
-  for (const [inkId, tag] of [
-    ['soft', '0.1.11 原版 · 清隽细体 (soft)'],
-    ['crisp', '0.1.12 候选 A · 清晰实色 (crisp：未选中 400 · 选中 500)'],
-    ['medium', '0.1.12 候选 B · 凝实中黑 (medium：全卡 500 中黑)'],
-  ]) {
+  for (const [tag, override] of comparison) {
     const rowWrap = document.createElement('div');
     rowWrap.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start;gap:4px;';
     const badge = document.createElement('div');
@@ -134,7 +152,7 @@ if (params.get('compare') === 'ink') {
     stack.append(rowWrap);
     const subHost = {
       ...host,
-      prefs: () => ({ ...prefsStore.getSnapshot(), edition: params.get('edition') || 'kibutsu', ink: inkId }),
+      prefs: () => ({ ...prefsStore.getSnapshot(), edition: params.get('edition') || 'kibutsu', ...override }),
     };
     const sub = mountSwitcher(slot, subHost, { inline: true });
     sub.begin(1, true);
@@ -173,6 +191,7 @@ if (params.get('selftest') === '1') {
     out.settingsEditions = document.querySelectorAll('#settings-mount [data-edition-opt]').length;
     out.settingsInks = document.querySelectorAll('#settings-mount [data-ink-opt]').length;
     out.settingsMotions = document.querySelectorAll('#settings-mount [data-motion-opt]').length;
+    out.settingsRefinements = document.querySelectorAll('#settings-mount :is([data-project-opt], [data-signal-opt], [data-title-opt])').length;
     out.inlinePreviewCards = document.querySelectorAll('#settings-mount .dsh-switcher-card').length;
     if (params.get('view') === 'settings') controller.cancel();
 

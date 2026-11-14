@@ -1,7 +1,8 @@
 /* ==========================================================================
    DSH Switcher — Overlay & Multi-Edition Stylesheet
    Supports 6 editions (`kibutsu`, `sujian`, `jiechi`, `moyun`, `b2`, `split`)
-   and 5 motion modes (`balanced`, `running-only`, `orbital`, `classic`, `off`).
+   and 5 motion modes (`balanced`, `running-only`, `orbital`, `classic`, `off`),
+   plus three optional focus refinements (`data-project`, `data-signal`, `data-title`).
    ========================================================================== */
 
 .dsh-switcher {
@@ -455,6 +456,66 @@
 .dsh-switcher[data-ink=soft] .dsh-ws-chip { font-size: 11px; }
 
 /* ==========================================================================
+   Focus Refinements (`data-project`, `data-signal`, `data-title`)
+   Orthogonal to the edition. Each one quiets a focal point that competes with
+   status and title, and its default value leaves the edition untouched.
+   ========================================================================== */
+
+/* `data-project=plain`: the project row is written like the status row instead of
+   a capsule. Icons share the title's left edge and both labels share one column, so
+   the card reads as status / title / project with a single accent left on status. */
+.dsh-switcher[data-project=plain] {
+  --sw-tag-ink: var(--sw-status-idle, var(--sw-muted));
+  --sw-tag-sel-ink: var(--sw-status-sel-idle, var(--sw-muted));
+  --sw-tag-icon: var(--sw-icon-idle, var(--sw-faint));
+  --sw-tag-sel-icon: var(--sw-icon-sel-idle, var(--sw-faint));
+}
+.dsh-switcher[data-project=plain]:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=b2]) .dsh-ws-chip,
+.dsh-switcher[data-project=plain]:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=b2]) .dsh-switcher-card[aria-selected=true] .dsh-ws-chip {
+  height: 20px; gap: 8.8px; padding: 0; margin-left: 0; border-radius: 0;
+  background: transparent; box-shadow: none; line-height: 16px; font-weight: 400; color: var(--sw-tag-ink);
+}
+.dsh-switcher[data-project=plain]:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=b2]) .dsh-ws-icon,
+.dsh-switcher[data-project=plain]:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=b2]) .dsh-switcher-card[aria-selected=true] .dsh-ws-icon {
+  /* 14px draws the folder at the status glyphs' stroke weight; -1.3px puts its ink on the title's left edge. */
+  width: 14px; height: 14px; margin-left: -1.3px; opacity: 1; color: var(--sw-tag-icon); transition: color .15s ease-out;
+}
+.dsh-switcher[data-project=plain]:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=b2]) .dsh-ws-icon svg {
+  width: 14px; height: 14px; stroke-width: 1.36;
+}
+.dsh-switcher[data-project=plain]:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=b2]) .dsh-switcher-card[aria-selected=true] .dsh-ws-chip {
+  color: var(--sw-tag-sel-ink);
+}
+.dsh-switcher[data-project=plain]:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=b2]) .dsh-switcher-card[aria-selected=true] .dsh-ws-icon {
+  color: var(--sw-tag-sel-icon);
+}
+/* A 20px row with matching top and bottom padding mirrors the status row's inset. */
+.dsh-switcher[data-project=plain]:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi]) .dsh-switcher-card {
+  grid-template-rows: 20px minmax(0, 1fr) 20px;
+}
+.dsh-switcher[data-project=plain]:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi]) .dsh-switcher-project { height: 20px; }
+.dsh-switcher[data-project=plain]:is([data-edition=kibutsu], [data-edition=jiechi]) .dsh-switcher-card { padding-bottom: 11px; }
+.dsh-switcher[data-project=plain][data-edition=sujian] .dsh-switcher-card { padding-bottom: 13px; }
+
+/* `data-signal=attention`: colour means "this needs you". A running session is busy
+   on its own, so it keeps its motion and loses the accent it shared with new results. */
+.dsh-switcher[data-signal=attention] .dsh-switcher-card .dsh-switcher-status[data-status=running],
+.dsh-switcher[data-signal=attention] .dsh-switcher-card .dsh-switcher-icon[data-status=running] {
+  color: var(--sw-draft-ink, var(--sw-ink));
+}
+.dsh-switcher[data-signal=attention][data-edition=kibutsu] .dsh-switcher-card .dsh-switcher-status[data-status=running] .dsh-pulse-dot {
+  opacity: 0; transform: scale(.3); animation: none;
+}
+
+/* `data-title=lead`: a scan reads one line per card. On unselected cards the second
+   line steps down to the secondary ink; the selected card keeps both lines solid.
+   `::first-line` stays set in both states so only the second line ever transitions. */
+.dsh-switcher[data-title=lead] .dsh-switcher-card .dsh-switcher-title { color: var(--sw-status-idle, var(--sw-muted)); }
+.dsh-switcher[data-title=lead] .dsh-switcher-card .dsh-switcher-title::first-line { color: var(--sw-title-idle, var(--sw-ink)); }
+.dsh-switcher[data-title=lead] .dsh-switcher-card[aria-selected=true] .dsh-switcher-title,
+.dsh-switcher[data-title=lead] .dsh-switcher-card[aria-selected=true] .dsh-switcher-title::first-line { color: var(--sw-ink); }
+
+/* ==========================================================================
    Selection Lens & Motion Controls
    ========================================================================== */
 
@@ -481,7 +542,7 @@
 @media (prefers-reduced-motion: reduce) {
   .dsh-switcher-card, .dsh-switcher-card::after, .dsh-switcher-title,
   .dsh-switcher-status, .dsh-switcher-icon, .dsh-switcher-lens,
-  .dsh-pulse-dot, .dsh-ws-chip { transition: none !important; animation: none !important; }
+  .dsh-pulse-dot, .dsh-ws-chip, .dsh-ws-icon { transition: none !important; animation: none !important; }
 }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
   .dsh-switcher-panel { background: var(--sw-opaque) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
@@ -491,6 +552,7 @@
     --sw-project: var(--sw-ink); --sw-note: var(--sw-ink); --sw-faint: var(--sw-ink);
     --sw-selected-edge: var(--sw-ink); --sw-title-idle: var(--sw-ink);
     --sw-status-idle: var(--sw-ink); --sw-icon-idle: var(--sw-ink); --sw-pill-ink: var(--sw-ink);
+    --sw-status-sel-idle: var(--sw-ink); --sw-icon-sel-idle: var(--sw-ink);
   }
   .dsh-switcher-card[aria-selected=true] { outline: 1px solid var(--sw-ink); outline-offset: -3px; }
   .dsh-switcher-status, .dsh-switcher-icon, .dsh-switcher-excerpt, .dsh-switcher-here { color: var(--sw-ink) !important; }
@@ -554,6 +616,8 @@
 .dsh-cfg-btn:disabled { opacity: .45; cursor: default; }
 
 .dsh-cfg-group { display: flex; flex-direction: column; gap: 7px; }
+.dsh-cfg-row { display: flex; flex-wrap: wrap; gap: 16px 24px; }
+.dsh-cfg-row > .dsh-cfg-group { flex: 1 1 220px; min-width: 0; }
 .dsh-cfg-label { font-size: 12px; line-height: 16px; font-weight: 500; color: var(--cfg-ink); }
 
 .dsh-cfg-options {

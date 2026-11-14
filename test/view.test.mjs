@@ -158,6 +158,18 @@ test('mountSwitcher switches cleanly across Status-First, B2, and Split editions
   assert.equal(overlay.dataset.lens, undefined);
   assert.equal(env.findAll(overlay, n => n.className === 'dsh-switcher-here').length, 3);
 
+  // Refinements default to the baseline and apply live as overlay attributes.
+  assert.equal(overlay.dataset.project, 'plain');
+  assert.equal(overlay.dataset.signal, 'attention');
+  assert.equal(overlay.dataset.title, 'lead');
+  prefs.update({ edition: 'kibutsu', project: 'chip', signal: 'classic', title: 'even' });
+  env.flushFrames();
+  assert.equal(overlay.dataset.project, 'chip');
+  assert.equal(overlay.dataset.signal, 'classic');
+  assert.equal(overlay.dataset.title, 'even');
+  assert.equal(env.findAll(overlay, n => n.className === 'dsh-switcher-card').length, 3);
+  assert.equal(env.findAll(overlay, n => n.className === 'dsh-ws-chip').length, 3);
+
   sw.destroy();
   assert.equal(container.children.length, 0);
 });
@@ -199,6 +211,18 @@ test('mountSettingsPanel renders 6 editions, 3 ink modes, 5 motions, and isolate
   assert.equal(prefs.getSnapshot().ink, 'medium');
   assert.equal(mediumBtn.getAttribute('aria-checked'), 'true');
   assert.equal(inlineOverlay.dataset.ink, 'medium');
+
+  // Each refinement is a two-way switch that also drives the inline preview.
+  for (const [attr, key, id] of [['projectOpt', 'project', 'chip'], ['signalOpt', 'signal', 'classic'], ['titleOpt', 'title', 'even']]) {
+    const btns = env.findAll(container, n => Boolean(n.dataset?.[attr]));
+    assert.equal(btns.length, 2);
+    const btn = btns.find(b => b.dataset[attr] === id);
+    assert.equal(btn.getAttribute('aria-checked'), 'false');
+    btn.dispatchEvent(new Event('click'));
+    assert.equal(prefs.getSnapshot()[key], id);
+    assert.equal(btn.getAttribute('aria-checked'), 'true');
+    assert.equal(inlineOverlay.dataset[key], id);
+  }
 
   const openBtn = env.findAll(container, n => n.dataset?.action === 'open-overlay')[0];
   openBtn.dispatchEvent(new Event('click'));

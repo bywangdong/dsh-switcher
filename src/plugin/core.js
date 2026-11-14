@@ -180,11 +180,11 @@ export function sessionPresentation(status, summary, draft = false, now = Date.n
 export const PREFS_KEY = 'dsh-switcher.prefs.v1';
 
 export const EDITION_OPTIONS = [
-  { id: 'kibutsu', label: '02 器物', badge: '默认', detail: '136px 凝练比例 · 状态 → 标题 → 项目胶囊 · 活跃态右侧微点，省去最后输入' },
-  { id: 'sujian', label: '01 素笺', detail: '158px 舒展留白 · 状态 → 标题 → 项目胶囊 · 省去最后输入' },
+  { id: 'kibutsu', label: '02 器物', badge: '默认', detail: '136px 凝练比例 · 状态 → 标题 → 项目行 · 待处理态右侧微点，省去最后输入' },
+  { id: 'sujian', label: '01 素笺', detail: '158px 舒展留白 · 状态 → 标题 → 项目行 · 省去最后输入' },
   { id: 'jiechi', label: '03 界尺', detail: '138px 无框竖线分界 · 唯选中列浮现底面 · 状态领读' },
   { id: 'moyun', label: '04 墨韵', detail: '138px 活跃状态淡底胶囊 · 底部无框项目微标，不同卡双胶囊' },
-  { id: 'b2', label: 'B2 轻胶囊', detail: '158px 统一中性项目胶囊 · 保留四行「项目 → 标题 → 状态 → 最后输入」' },
+  { id: 'b2', label: 'B2 轻胶囊', detail: '158px 统一中性项目标签 · 保留四行「项目 → 标题 → 状态 → 最后输入」' },
   { id: 'split', label: '01 分签', detail: '158px 经典顶栏题签 · 含「当前」标记与最后输入' },
 ];
 
@@ -202,19 +202,36 @@ export const INK_OPTIONS = [
   { id: 'soft', label: '清隽细体', detail: '保留 0.1.11 清淡灰阶细体（未选中弱化），适合偏爱轻柔观感的屏幕' },
 ];
 
-export const DEFAULT_PREFS = Object.freeze({ edition: 'kibutsu', motion: 'balanced', ink: 'crisp' });
+// The three groups below are orthogonal to the edition. Each one quiets a focal point
+// that competes with status and title; their defaults keep the 02 器物 baseline as is.
+export const PROJECT_OPTIONS = [
+  { id: 'plain', label: '纯文字', badge: '默认', detail: '去掉描边与底色，和状态行同一套写法、上下对齐；选中卡只升一级墨色' },
+  { id: 'chip', label: '轻胶囊', detail: '中性描边胶囊，选中卡反白提亮' },
+];
 
-const EDITION_IDS = new Set(EDITION_OPTIONS.map(option => option.id));
-const MOTION_IDS = new Set(MOTION_OPTIONS.map(option => option.id));
-const INK_IDS = new Set(INK_OPTIONS.map(option => option.id));
+export const SIGNAL_OPTIONS = [
+  { id: 'attention', label: '只标待处理', badge: '默认', detail: '颜色只表示需要你处理：待确认琥珀、新结果蓝；运行中改为中性色，靠图标动效示意' },
+  { id: 'classic', label: '活跃即着色', detail: '运行中与新结果同为蓝色，待确认为琥珀色' },
+];
+
+export const TITLE_OPTIONS = [
+  { id: 'lead', label: '首行为主', badge: '默认', detail: '未选中卡的标题第二行降为次级色，扫视时只读首行；选中卡两行实色' },
+  { id: 'even', label: '两行同色', detail: '标题两行同一墨色' },
+];
+
+export const DEFAULT_PREFS = Object.freeze({ edition: 'kibutsu', motion: 'balanced', ink: 'crisp', project: 'plain', signal: 'attention', title: 'lead' });
+
+const PREF_OPTIONS = { edition: EDITION_OPTIONS, motion: MOTION_OPTIONS, ink: INK_OPTIONS, project: PROJECT_OPTIONS, signal: SIGNAL_OPTIONS, title: TITLE_OPTIONS };
+const PREF_IDS = Object.fromEntries(Object.entries(PREF_OPTIONS).map(([key, options]) => [key, new Set(options.map(option => option.id))]));
+export const PREF_KEYS = Object.freeze(Object.keys(PREF_OPTIONS));
 
 export function normalizePrefs(input) {
   const value = input && typeof input === 'object' ? input : {};
-  return {
-    edition: EDITION_IDS.has(value.edition) ? value.edition : DEFAULT_PREFS.edition,
-    motion: MOTION_IDS.has(value.motion) ? value.motion : DEFAULT_PREFS.motion,
-    ink: INK_IDS.has(value.ink) ? value.ink : DEFAULT_PREFS.ink,
-  };
+  return Object.fromEntries(PREF_KEYS.map(key => [key, PREF_IDS[key].has(value[key]) ? value[key] : DEFAULT_PREFS[key]]));
+}
+
+export function samePrefs(a, b) {
+  return PREF_KEYS.every(key => a[key] === b[key]);
 }
 
 export function readPrefs(raw) {
@@ -239,7 +256,7 @@ export function createPrefsStore(storage) {
     getSnapshot: () => state,
     update(patch) {
       const next = normalizePrefs({ ...state, ...patch });
-      if (next.edition === state.edition && next.motion === state.motion && next.ink === state.ink) return state;
+      if (samePrefs(next, state)) return state;
       state = next;
       try { storage?.setItem(PREFS_KEY, JSON.stringify(state)); } catch { /* Memory fallback stays live. */ }
       notify();
@@ -249,7 +266,7 @@ export function createPrefsStore(storage) {
     sync() {
       let next = state;
       try { next = readPrefs(storage?.getItem(PREFS_KEY)); } catch { return state; }
-      if (next.edition === state.edition && next.motion === state.motion && next.ink === state.ink) return state;
+      if (samePrefs(next, state)) return state;
       state = next; notify();
       return state;
     },

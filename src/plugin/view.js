@@ -1,4 +1,4 @@
-import { SwitchCycle, phraseBreaks, normalizePrefs, isStatusFirstEdition, usesLensMotion } from './core.js';
+import { SwitchCycle, phraseBreaks, normalizePrefs, samePrefs, isStatusFirstEdition, usesLensMotion } from './core.js';
 import { createFivebeatMotion } from './motion.js';
 import { installSwitcherKeyboard } from './keyboard.js';
 
@@ -57,6 +57,9 @@ export function mountSwitcher(container, host, options = {}) {
     overlay.dataset.edition = prefs.edition;
     overlay.dataset.motion = prefs.motion;
     overlay.dataset.ink = prefs.ink;
+    overlay.dataset.project = prefs.project;
+    overlay.dataset.signal = prefs.signal;
+    overlay.dataset.title = prefs.title;
     if (usesLensMotion(prefs.edition, prefs.motion)) overlay.dataset.lens = 'true';
     else delete overlay.dataset.lens;
   }
@@ -172,9 +175,10 @@ export function mountSwitcher(container, host, options = {}) {
 
     const nextPrefs = normalizePrefs(host.prefs?.());
     let immediateSelection = false;
-    if (nextPrefs.edition !== prefs.edition) {
+    // The project label changes its box, so its truncation tooltips are measured again.
+    if (nextPrefs.edition !== prefs.edition || nextPrefs.project !== prefs.project) {
       prefs = nextPrefs; applyPrefsAttributes(); buildCards(); immediateSelection = true;
-    } else if (nextPrefs.motion !== prefs.motion || nextPrefs.ink !== prefs.ink) {
+    } else if (!samePrefs(nextPrefs, prefs)) {
       const motionChanged = nextPrefs.motion !== prefs.motion;
       prefs = nextPrefs; applyPrefsAttributes();
       if (motionChanged) { motion?.setMode(prefs.motion); immediateSelection = true; }

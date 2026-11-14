@@ -1,4 +1,4 @@
-import { EDITION_OPTIONS, MOTION_OPTIONS, INK_OPTIONS, DEFAULT_PREFS, sessionPresentation } from './core.js';
+import { EDITION_OPTIONS, MOTION_OPTIONS, INK_OPTIONS, PROJECT_OPTIONS, SIGNAL_OPTIONS, TITLE_OPTIONS, DEFAULT_PREFS, samePrefs, sessionPresentation } from './core.js';
 import { mountSwitcher } from './view.js';
 
 export function mountSettingsPanel(container, options = {}) {
@@ -69,9 +69,21 @@ export function mountSettingsPanel(container, options = {}) {
     return { group, buttons, detail };
   }
 
-  const editionGroup = createOptionGroup('卡片版式与信息组织', EDITION_OPTIONS, 'editionOpt', id => prefs.update({ edition: id }));
-  const inkGroup = createOptionGroup('文字浓淡与字重', INK_OPTIONS, 'inkOpt', id => prefs.update({ ink: id }));
-  const motionGroup = createOptionGroup('状态图标与切换动效', MOTION_OPTIONS, 'motionOpt', id => prefs.update({ motion: id }));
+  const createPrefGroup = (key, labelText, items) => ({
+    key, items, ...createOptionGroup(labelText, items, `${key}Opt`, id => prefs.update({ [key]: id })),
+  });
+  const editionGroup = createPrefGroup('edition', '卡片版式与信息组织', EDITION_OPTIONS);
+  // Two-way refinements share one row, so the live preview stays close to its switches.
+  const refineGroups = [
+    createPrefGroup('project', '项目标签', PROJECT_OPTIONS),
+    createPrefGroup('signal', '状态配色', SIGNAL_OPTIONS),
+    createPrefGroup('title', '标题层次', TITLE_OPTIONS),
+  ];
+  const refineRow = document.createElement('div'); refineRow.className = 'dsh-cfg-row';
+  refineRow.append(...refineGroups.map(item => item.group));
+  const inkGroup = createPrefGroup('ink', '文字浓淡与字重', INK_OPTIONS);
+  const motionGroup = createPrefGroup('motion', '状态图标与切换动效', MOTION_OPTIONS);
+  const prefGroups = [editionGroup, ...refineGroups, inkGroup, motionGroup];
 
   const previewWrap = document.createElement('div'); previewWrap.className = 'dsh-cfg-preview';
   const previewBar = document.createElement('div'); previewBar.className = 'dsh-cfg-preview-bar';
@@ -85,7 +97,7 @@ export function mountSettingsPanel(container, options = {}) {
   const stage = document.createElement('div'); stage.className = 'dsh-cfg-stage';
   previewWrap.append(previewBar, stage);
 
-  root.append(head, editionGroup.group, inkGroup.group, motionGroup.group, previewWrap);
+  root.append(head, editionGroup.group, refineRow, inkGroup.group, motionGroup.group, previewWrap);
   container.append(root);
 
   const now = Date.now();
@@ -139,31 +151,16 @@ export function mountSettingsPanel(container, options = {}) {
     const theme = getTheme();
     root.dataset.theme = theme;
 
-    for (const [id, btn] of editionGroup.buttons) {
-      const checked = id === snap.edition;
-      btn.setAttribute('aria-checked', String(checked));
-      btn.tabIndex = checked ? 0 : -1;
-    }
-    for (const [id, btn] of inkGroup.buttons) {
-      const checked = id === snap.ink;
-      btn.setAttribute('aria-checked', String(checked));
-      btn.tabIndex = checked ? 0 : -1;
-    }
-    for (const [id, btn] of motionGroup.buttons) {
-      const checked = id === snap.motion;
-      btn.setAttribute('aria-checked', String(checked));
-      btn.tabIndex = checked ? 0 : -1;
+    for (const { key, items, buttons, detail } of prefGroups) {
+      for (const [id, btn] of buttons) {
+        const checked = id === snap[key];
+        btn.setAttribute('aria-checked', String(checked));
+        btn.tabIndex = checked ? 0 : -1;
+      }
+      detail.textContent = (items.find(item => item.id === snap[key]) || items[0]).detail;
     }
 
-    const edMeta = EDITION_OPTIONS.find(o => o.id === snap.edition) || EDITION_OPTIONS[0];
-    const inkMeta = INK_OPTIONS.find(o => o.id === snap.ink) || INK_OPTIONS[0];
-    const moMeta = MOTION_OPTIONS.find(o => o.id === snap.motion) || MOTION_OPTIONS[0];
-    editionGroup.detail.textContent = edMeta.detail;
-    inkGroup.detail.textContent = inkMeta.detail;
-    motionGroup.detail.textContent = moMeta.detail;
-
-    const isDefault = snap.edition === DEFAULT_PREFS.edition && snap.motion === DEFAULT_PREFS.motion && snap.ink === DEFAULT_PREFS.ink;
-    resetBtn.disabled = isDefault;
+    resetBtn.disabled = samePrefs(snap, DEFAULT_PREFS);
 
     if (openBtn) {
       const available = Boolean(canPreview());

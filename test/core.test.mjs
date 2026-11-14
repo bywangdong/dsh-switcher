@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readHistory, remember, isSubagentSession, resolveSessionTarget, candidates, SwitchCycle, latestUserInput, hasDraft, sessionPresentation, sessionWorkspaceName, sessionTimestamp, relativeTime, phraseBreaks, PREFS_KEY, DEFAULT_PREFS, normalizePrefs, readPrefs, isStatusFirstEdition, usesLensMotion, createPrefsStore } from '../src/plugin/core.js';
+import { readHistory, remember, isSubagentSession, resolveSessionTarget, candidates, SwitchCycle, latestUserInput, hasDraft, sessionPresentation, sessionWorkspaceName, sessionTimestamp, relativeTime, phraseBreaks, PREFS_KEY, PREF_KEYS, DEFAULT_PREFS, normalizePrefs, samePrefs, readPrefs, isStatusFirstEdition, usesLensMotion, createPrefsStore } from '../src/plugin/core.js';
 
 test('MRU survives malformed storage and only contains unique ids', () => {
   assert.deepEqual(readHistory('{'), []);
@@ -164,11 +164,17 @@ test('workspace title follows authoritative membership and falls back to directo
 });
 
 test('preferences validate safely, persist to storage, and sync across updates', () => {
-  assert.deepEqual(DEFAULT_PREFS, { edition: 'kibutsu', motion: 'balanced', ink: 'crisp' });
-  assert.deepEqual(readPrefs(''), { edition: 'kibutsu', motion: 'balanced', ink: 'crisp' });
-  assert.deepEqual(readPrefs('{broken'), { edition: 'kibutsu', motion: 'balanced', ink: 'crisp' });
-  assert.deepEqual(normalizePrefs({ edition: 'unknown', motion: 'orbital', ink: 'medium' }), { edition: 'kibutsu', motion: 'orbital', ink: 'medium' });
-  assert.deepEqual(normalizePrefs({ edition: 'split', motion: 'invalid', ink: 'invalid' }), { edition: 'split', motion: 'balanced', ink: 'crisp' });
+  const base = { edition: 'kibutsu', motion: 'balanced', ink: 'crisp', project: 'plain', signal: 'attention', title: 'lead' };
+  assert.deepEqual(DEFAULT_PREFS, base);
+  assert.deepEqual(PREF_KEYS, Object.keys(base));
+  assert.deepEqual(readPrefs(''), base);
+  assert.deepEqual(readPrefs('{broken'), base);
+  assert.deepEqual(normalizePrefs({ edition: 'unknown', motion: 'orbital', ink: 'medium' }), { ...base, motion: 'orbital', ink: 'medium' });
+  assert.deepEqual(normalizePrefs({ edition: 'split', motion: 'invalid', ink: 'invalid' }), { ...base, edition: 'split' });
+  assert.deepEqual(normalizePrefs({ project: 'chip', signal: 'classic', title: 'even' }), { ...base, project: 'chip', signal: 'classic', title: 'even' });
+  assert.deepEqual(normalizePrefs({ project: 'constructor', signal: 1, title: null }), base);
+  assert.equal(samePrefs(base, { ...base }), true);
+  assert.equal(samePrefs(base, { ...base, title: 'even' }), false);
 
   for (const ed of ['kibutsu', 'sujian', 'jiechi', 'moyun']) assert.equal(isStatusFirstEdition(ed), true);
   assert.equal(isStatusFirstEdition('b2'), false);
@@ -184,24 +190,29 @@ test('preferences validate safely, persist to storage, and sync across updates',
   const store = createPrefsStore(storage);
   let notifications = 0;
   const unsub = store.subscribe(() => notifications++);
-  assert.deepEqual(store.getSnapshot(), { edition: 'kibutsu', motion: 'balanced', ink: 'crisp' });
+  assert.deepEqual(store.getSnapshot(), base);
 
   store.update({ edition: 'moyun', ink: 'medium' });
   assert.equal(notifications, 1);
-  assert.deepEqual(JSON.parse(map.get(PREFS_KEY)), { edition: 'moyun', motion: 'balanced', ink: 'medium' });
+  assert.deepEqual(JSON.parse(map.get(PREFS_KEY)), { ...base, edition: 'moyun', ink: 'medium' });
 
   // No-op update does not re-notify.
   store.update({ edition: 'moyun', ink: 'medium' });
   assert.equal(notifications, 1);
 
-  // External storage mutation (including 0.1.11 payloads without `ink`) syncs cleanly.
+  // External storage mutation (including older payloads without the newer keys) syncs cleanly.
   map.set(PREFS_KEY, JSON.stringify({ edition: 'b2', motion: 'running-only' }));
   store.sync();
   assert.equal(notifications, 2);
-  assert.deepEqual(store.getSnapshot(), { edition: 'b2', motion: 'running-only', ink: 'crisp' });
+  assert.deepEqual(store.getSnapshot(), { ...base, edition: 'b2', motion: 'running-only' });
+
+  // A refinement on its own is a real change, and reset clears it with the rest.
+  store.update({ project: 'chip' });
+  assert.equal(notifications, 3);
+  assert.equal(store.getSnapshot().project, 'chip');
 
   store.reset();
-  assert.equal(notifications, 3);
+  assert.equal(notifications, 4);
   assert.deepEqual(store.getSnapshot(), DEFAULT_PREFS);
   unsub();
 });
