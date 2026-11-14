@@ -296,7 +296,8 @@ export function mountSwitcher(container, host, options = {}) {
         returnSelection = { range: selection.getRangeAt(0).cloneRange() };
       }
     }
-    cycle = new SwitchCycle(ids, host.current(), direction);
+    const anchor = typeof host.activeSession === 'function' ? host.activeSession() : host.current();
+    cycle = new SwitchCycle(ids, anchor, direction);
     overlay = document.createElement('div'); overlay.className = 'dsh-switcher'; overlay.dataset.revealed = 'false';
     overlay.dataset.pointer = inline ? 'mouse' : 'keyboard';
     overlay.dataset.theme = host.theme();

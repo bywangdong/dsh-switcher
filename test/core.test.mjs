@@ -1,18 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readHistory, remember, candidates, SwitchCycle, latestUserInput, hasDraft, sessionPresentation, sessionWorkspaceName, sessionTimestamp, relativeTime, phraseBreaks, PREFS_KEY, DEFAULT_PREFS, normalizePrefs, readPrefs, isStatusFirstEdition, usesLensMotion, createPrefsStore } from '../src/plugin/core.js';
+import { readHistory, remember, isSubagentSession, resolveSessionTarget, candidates, SwitchCycle, latestUserInput, hasDraft, sessionPresentation, sessionWorkspaceName, sessionTimestamp, relativeTime, phraseBreaks, PREFS_KEY, DEFAULT_PREFS, normalizePrefs, readPrefs, isStatusFirstEdition, usesLensMotion, createPrefsStore } from '../src/plugin/core.js';
 
 test('MRU survives malformed storage and only contains unique ids', () => {
   assert.deepEqual(readHistory('{'), []);
   assert.deepEqual(readHistory('["b",null,"a","b",8]'), ['b', 'a']);
   assert.deepEqual(remember(['b', 'a', 'c'], 'a'), ['a', 'b', 'c']);
 });
-test('candidates follow visits, exclude archives/deletions and do not surface unvisited subagents', () => {
+test('candidates follow visits and exclude archives, deletions and subagents', () => {
   const snapshot = { ids: ['a', 'b', 'c', 'd', 'child'], byId: {
-    a: { updatedAt: 1 }, b: { updatedAt: 9 }, c: { updatedAt: 4 }, d: { updatedAt: 5 }, child: { parentId: 'a', updatedAt: 20 },
+    a: { updatedAt: 1 }, b: { updatedAt: 9 }, c: { updatedAt: 4 }, d: { updatedAt: 5 },
+    child: { parentId: 'a', origin: 'subagent', updatedAt: 20 },
   } };
   assert.deepEqual(candidates(snapshot, ['b'], ['a', 'gone', 'c'], 'a'), ['a', 'c', 'd']);
-  assert.deepEqual(candidates(snapshot, [], ['a', 'child'], 'a'), ['a', 'child', 'b', 'd', 'c']);
+  assert.deepEqual(candidates(snapshot, [], ['a', 'child'], 'a'), ['a', 'b', 'd', 'c']);
 });
 test('cycling freezes MRU, wraps both ways, and has no commit side effects', () => {
   const history = ['a', 'b', 'c'];
@@ -23,6 +24,8 @@ test('cycling freezes MRU, wraps both ways, and has no commit side effects', () 
   cycle.step(-1); assert.equal(cycle.selected, 'c');
   assert.equal(new SwitchCycle(['a', 'b', 'c'], 'a', -1).selected, 'c');
   cycle.select('gone'); assert.equal(cycle.selected, 'c');
+  assert.equal(new SwitchCycle(['b', 'c'], undefined, 1).selected, 'b');
+  assert.equal(new SwitchCycle(['b', 'c'], undefined, -1).selected, 'c');
 });
 test('unused blank sessions cannot displace real recent conversations', () => {
   const snapshot = { ids: ['current', 'empty', 'real'], byId: {
@@ -31,10 +34,49 @@ test('unused blank sessions cannot displace real recent conversations', () => {
   assert.deepEqual(candidates(snapshot, [], ['empty'], 'current'), ['current', 'real']);
   assert.deepEqual(candidates(snapshot, [], ['empty'], 'current', ['empty']), ['current', 'empty', 'real']);
 });
-test('an explicitly visited subagent remains reachable even outside the top-level ids', () => {
-  const snapshot = { ids: ['a'], byId: { a: {}, child: { parentId: 'a' } } };
-  assert.deepEqual(candidates(snapshot, [], ['a'], 'child'), ['child', 'a']);
-  assert.deepEqual(candidates(snapshot, [], ['child'], 'a'), ['a', 'child']);
+test('subagents never enter candidates, resolve to their root parent, and ordinary forks stay switchable', () => {
+  const snapshot = {
+    ids: ['a', 'b', 'subListed', 'subDepth', 'legacyFork', 'cleanFork'],
+    byId: {
+      a: { updatedAt: 10 },
+      b: { updatedAt: 8 },
+      subListed: { parentId: 'a', origin: 'subagent', updatedAt: 99 },
+      subDepth: { parentId: 'a', delegationDepth: 1, updatedAt: 98 },
+      subCatalogOnly: { parentId: 'a', updatedAt: 97 },
+      subNested: { parentId: 'subListed', origin: 'subagent', updatedAt: 96 },
+      subCatalogProp: { updatedAt: 95 },
+      subOrphan: { parentId: 'missing', origin: 'subagent', updatedAt: 94 },
+      subCycleA: { parentId: 'subCycleB', origin: 'subagent' },
+      subCycleB: { parentId: 'subCycleA', origin: 'subagent' },
+      legacyFork: { parentId: 'a', updatedAt: 40 },
+      cleanFork: { updatedAt: 50 },
+    },
+    projectionsBySession: {
+      a: { values: { subagentCatalog: [{ id: 'subCatalogProp' }] } },
+    },
+  };
+
+  for (const id of ['subListed', 'subDepth', 'subCatalogOnly', 'subNested', 'subCatalogProp', 'subOrphan', 'subCycleA']) {
+    assert.equal(isSubagentSession(snapshot, id), true, `${id} should be classified as subagent`);
+  }
+  assert.equal(isSubagentSession(snapshot, 'a'), false);
+  assert.equal(isSubagentSession(snapshot, 'legacyFork'), false);
+  assert.equal(isSubagentSession(snapshot, 'cleanFork'), false);
+
+  assert.equal(resolveSessionTarget(snapshot, 'subListed'), 'a');
+  assert.equal(resolveSessionTarget(snapshot, 'subNested'), 'a');
+  assert.equal(resolveSessionTarget(snapshot, 'subCatalogProp'), 'a');
+  assert.equal(resolveSessionTarget(snapshot, 'subOrphan'), undefined);
+  assert.equal(resolveSessionTarget(snapshot, 'subCycleA'), undefined);
+  assert.equal(resolveSessionTarget(snapshot, 'legacyFork'), 'legacyFork');
+
+  // Even when present in current, history, and draftIds, subagents never appear; ordinary forks remain switchable.
+  assert.deepEqual(
+    candidates(snapshot, [], ['subListed', 'subCatalogOnly', 'subDepth', 'b'], 'subNested', ['subCatalogProp']),
+    ['a', 'b', 'cleanFork', 'legacyFork'],
+  );
+  // Viewing an orphan subagent excludes it cleanly and falls back to the remaining real sessions.
+  assert.deepEqual(candidates(snapshot, ['a'], ['subOrphan', 'b'], 'subOrphan'), ['b', 'cleanFork', 'legacyFork']);
 });
 test('excerpt is the latest human input, never assistant text or tool output', () => {
   const user = content => ({ event: { type: 'user/message', data: { role: 'user', source: { kind: 'user' }, content } } });

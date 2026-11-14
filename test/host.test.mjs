@@ -92,3 +92,80 @@ test('streaming uses event deltas; draft/status notifications do not rescan or r
   stop(); assert.equal(releases, 0);
   host.destroy(); assert.equal(events.size, 0); assert.equal(input.size, 0);
 });
+
+test('host scrubs stored subagents, ignores subagent mounts, and anchors on the parent session', () => {
+  const storage = new Map([['dsh-switcher.mru.v1', JSON.stringify(['subOrigin', 'subRetained', 'subAddr', 'b', 'a'])]]);
+  globalThis.sessionStorage = { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) };
+  try {
+    const eventsA = store({ entries: [{ event: { type: 'user/message', data: { content: '父会话输入' } } }] });
+    const eventsSub = store({ entries: [{ event: { type: 'user/message', data: { content: '子代理内部任务' } } }] });
+    const sessionA = Object.assign(store({ openState: 'open' }), { eventSource: eventsA });
+    const sessionSub = Object.assign(store({ openState: 'open' }), { eventSource: eventsSub });
+    const bindingCalls = [];
+    const list = store({
+      ids: ['a', 'b', 'subOrigin'],
+      byId: {
+        a: { displayTitle: '父会话 A', updatedAt: 10 },
+        b: { displayTitle: '会话 B', updatedAt: 20 },
+        subOrigin: { displayTitle: '子代理 O', parentId: 'a', origin: 'subagent', updatedAt: 99 },
+        subRetained: { displayTitle: '子代理 R', parentId: 'a', updatedAt: 98 },
+        subAddr: { displayTitle: '子代理 Addr', updatedAt: 97 },
+      },
+    });
+    const mounted = store('a');
+    const ctx = {
+      sessions: {
+        list,
+        binding(id) {
+          bindingCalls.push(id);
+          if (id === 'a') return { sessionId: 'a', ctx: {}, session: sessionA };
+          if (id === 'subOrigin') return { sessionId: 'subOrigin', ctx: {}, session: sessionSub };
+          return undefined;
+        },
+        subagentAddress: id => (id === 'subAddr' ? { parentSessionId: 'b' } : undefined),
+        retain: id => ({ binding: { sessionId: id, ctx: {}, session: sessionA }, ready: Promise.resolve(), release() {} }),
+      },
+      sidebarRight: { mounted },
+      uiSession: { sessionStatus: store(new Map()) },
+      workspaces: { list: store({ archivedSessionIds: [], items: [] }) },
+      conversation: { input: { for: () => ({ state: store({ draft: '' }) }) } },
+      theme: { getTheme: () => ({ active: { colorScheme: 'light' } }) },
+      uiWorkspace: { openSession() {} },
+      on: () => () => {},
+    };
+
+    const host = createHostAdapter(ctx);
+    assert.deepEqual(JSON.parse(storage.get('dsh-switcher.mru.v1')), ['a', 'b']);
+    assert.deepEqual(host.candidates(), ['a', 'b']);
+    assert.equal(host.exists('a'), true);
+    for (const subId of ['subOrigin', 'subRetained', 'subAddr']) assert.equal(host.exists(subId), false);
+
+    // Viewing subagents never records them to MRU or binds their event streams.
+    mounted.set('subOrigin');
+    assert.equal(host.activeSession(), 'a');
+    assert.deepEqual(host.candidates(), ['a', 'b']);
+    assert.equal(eventsSub.size, 0);
+    assert.equal(bindingCalls.includes('subOrigin'), false);
+    assert.deepEqual(JSON.parse(storage.get('dsh-switcher.mru.v1')), ['a', 'b']);
+
+    // Mounting a subagent attached to b anchors MRU/switcher on b, still excluding subagents.
+    mounted.set('subRetained');
+    list.set({
+      ...list.getSnapshot(),
+      byId: { ...list.getSnapshot().byId, subRetained: { displayTitle: '子代理 R', parentId: 'b', updatedAt: 98 } },
+    });
+    assert.equal(host.activeSession(), 'b');
+    assert.deepEqual(host.candidates(), ['b', 'a']);
+    assert.deepEqual(JSON.parse(storage.get('dsh-switcher.mru.v1')), ['b', 'a']);
+
+    // Orphan subagent without a root target resolves to undefined and still leaves b, a clean.
+    mounted.set('subAddr');
+    assert.equal(host.exists('subAddr'), false);
+    assert.equal(host.activeSession(), undefined);
+    assert.deepEqual(host.candidates(), ['b', 'a']);
+
+    host.destroy();
+  } finally {
+    delete globalThis.sessionStorage;
+  }
+});

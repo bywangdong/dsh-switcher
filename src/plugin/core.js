@@ -12,18 +12,58 @@ export function remember(history, id) {
   return id ? [id, ...history.filter(other => other !== id)].slice(0, 100) : history;
 }
 
+export function isSubagentSession(snapshot, id) {
+  const summary = snapshot?.byId?.[id];
+  if (!summary) return false;
+  if (summary.origin === 'subagent' || (typeof summary.delegationDepth === 'number' && summary.delegationDepth > 0)) return true;
+  if (Array.isArray(snapshot?.ids) && !snapshot.ids.includes(id)) return true;
+  const projections = snapshot?.projectionsBySession;
+  if (projections && typeof projections === 'object') {
+    for (const entry of Object.values(projections)) {
+      const catalog = entry?.values?.subagentCatalog;
+      if (Array.isArray(catalog) && catalog.some(child => child?.id === id)) return true;
+    }
+  }
+  return false;
+}
+
+function findCatalogParent(snapshot, id) {
+  const projections = snapshot?.projectionsBySession;
+  if (!projections || typeof projections !== 'object') return undefined;
+  for (const [parentId, entry] of Object.entries(projections)) {
+    const catalog = entry?.values?.subagentCatalog;
+    if (Array.isArray(catalog) && catalog.some(child => child?.id === id)) return parentId;
+  }
+  return undefined;
+}
+
+export function resolveSessionTarget(snapshot, id) {
+  let cursor = id;
+  const seen = new Set();
+  while (cursor && !seen.has(cursor)) {
+    seen.add(cursor);
+    const summary = snapshot?.byId?.[cursor];
+    if (!summary) return undefined;
+    if (!isSubagentSession(snapshot, cursor)) return cursor;
+    cursor = summary.parentId || summary.parentSessionId || summary.parentSession || findCatalogParent(snapshot, cursor);
+  }
+  return undefined;
+}
+
 export function candidates(snapshot, archived, history, current, draftIds = []) {
   const excluded = new Set(archived);
   const drafts = new Set(draftIds);
-  // Opened subagents may live in byId without being part of the top-level ids catalog.
-  const known = [...new Set([...snapshot.ids, current, ...history])];
-  const available = known.filter(id => !excluded.has(id) && snapshot.byId[id] &&
-    (id === current || drafts.has(id) || snapshot.byId[id].blank !== true));
+  const activeCurrent = resolveSessionTarget(snapshot, current);
+  const topIds = Array.isArray(snapshot?.ids) ? snapshot.ids : [];
+  const available = topIds.filter(id =>
+    !excluded.has(id) &&
+    snapshot?.byId?.[id] &&
+    !isSubagentSession(snapshot, id) &&
+    (id === activeCurrent || drafts.has(id) || snapshot.byId[id].blank !== true));
   const allowed = new Set(available);
   const updated = new Map(available.map(id => [id, sessionTimestamp(snapshot.byId[id].updatedAt)]));
-  const recent = available.filter(id => !snapshot.byId[id].parentId && snapshot.byId[id].origin !== 'subagent')
-    .sort((a, b) => updated.get(b) - updated.get(a));
-  return [...new Set([current, ...history, ...recent])].filter(id => allowed.has(id)).slice(0, MAX_CANDIDATES);
+  const recent = [...available].sort((a, b) => updated.get(b) - updated.get(a));
+  return [...new Set([activeCurrent, ...history, ...recent])].filter(id => id && allowed.has(id)).slice(0, MAX_CANDIDATES);
 }
 
 // DSH persists ISO strings; a client snapshot may carry epoch numbers instead.
@@ -56,8 +96,13 @@ export function relativeTime(value, now = Date.now()) {
 export class SwitchCycle {
   constructor(ids, current, direction) {
     this.ids = [...ids];
-    this.index = Math.max(0, this.ids.indexOf(current));
-    this.step(direction);
+    const start = this.ids.indexOf(current);
+    if (start >= 0) {
+      this.index = start;
+      this.step(direction);
+    } else {
+      this.index = direction < 0 ? Math.max(0, this.ids.length - 1) : 0;
+    }
   }
   get selected() { return this.ids[this.index]; }
   step(direction) {

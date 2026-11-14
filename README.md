@@ -8,7 +8,7 @@ DeepSeek Harness 的 Ctrl + Tab 最近会话切换器。独立于 `dshMagicShort
 - `Ctrl + Shift + Tab` 反向选择，松开 Ctrl 提交。
 - `Esc` 取消；`Enter` 或点击卡片也可确认。macOS 按住 Ctrl 点击卡片同样立即确认，不必松键。失焦、窗口隐藏、输入法组合时取消。
 - 每次打开先隐藏浮层内的鼠标光标，移动后恢复并接管选择；静止鼠标不打断键盘选择。关闭即恢复正常光标。
-- 当前会话和四个最近会话跨工作区展示，打开期间顺序固定。初次使用按最近活动补齐，过滤归档、已删除和空白会话；未访问的子代理不进入候选。
+- 当前会话和四个最近会话跨工作区展示，打开期间顺序固定。初次使用按最近活动补齐，过滤归档、已删除、空白会话及子代理（subagent）。
 
 默认卡片按 **状态领读 → 两行会话标题 → 底部项目胶囊**（**02「器物」**，182 × 136）排列，贴合真实切换时「先看运行/等待状态，再看标题，最后确认所属项目」的扫视顺序，省去低区分度的最后一次输入。项目名优先使用 DSH 工作区名称，未分组会话回退到目录名；重命名和归属变化实时更新。状态读取 DSH 的运行、待确认/待回应、未读结果及草稿事实；空闲会话的状态行显示最近更新时间（如"12 分钟前""昨天"），读不到时显示"已就绪"。切换选中项时采用共享选中底框平滑过渡（首尾循环自动瞬跳），仅在文本实际发生截断时附加原生悬浮提示。
 
@@ -60,7 +60,7 @@ npm run build
 npm test
 npm run check
 npm run pack:local
-dsh plugin --profile desktop add /absolute/path/to/dsh-switcher/dist/dsh-switcher-0.1.12.tgz --offline --ignore-scripts
+dsh plugin --profile desktop add /absolute/path/to/dsh-switcher/dist/dsh-switcher-0.1.13.tgz --offline --ignore-scripts
 ```
 
 安装包只有客户端代码、空的宿主入口、插件补丁、包信息和说明。使用官方插件安装路径，不修改 DSH 应用包。针对 DSH **0.2.1-rc.2** 的公开客户端服务开发，目前本机验证平台为 macOS。

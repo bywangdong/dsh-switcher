@@ -207,3 +207,52 @@ test('mountSettingsPanel renders 6 editions, 3 ink modes, 5 motions, and isolate
   panel.destroy();
   assert.equal(container.children.length, 0);
 });
+
+test('mountSwitcher anchors on activeSession when viewing a subagent and lets Ctrl+Tab return to its parent', async t => {
+  const env = domEnvironment(t);
+  const prefs = createPrefsStore();
+  const container = new env.Node();
+  const opened = [];
+  let mounted = 'sub-1', active = 's1';
+  const ids = ['s1', 's2', 's3'];
+  const host = {
+    current: () => mounted,
+    activeSession: () => active,
+    candidates: () => ids,
+    exists: id => ids.includes(id),
+    theme: () => 'light',
+    prefs: () => prefs.getSnapshot(),
+    row: id => ({
+      id,
+      title: `会话-${id}`,
+      workspaceName: 'Agent',
+      text: '',
+      placeholder: '还没有输入',
+      ...sessionPresentation({}, { updatedAt: Date.now() - 60000 }, false),
+    }),
+    preview: () => () => {},
+    subscribe: () => () => {},
+    open: id => { opened.push(id); },
+  };
+
+  const sw = mountSwitcher(container, host);
+  // Stepping forward from parent s1 lands on s2.
+  sw.begin(1, true);
+  await new Promise(r => setTimeout(r, 10));
+  let cards = env.findAll(container, n => n.className === 'dsh-switcher-card');
+  assert.equal(cards[1].getAttribute('aria-selected'), 'true');
+  // Stepping back to parent s1 and committing exits sub-1 back to s1.
+  sw.select('s1');
+  sw.commit();
+  assert.deepEqual(opened, ['s1']);
+
+  // When viewing an orphan subagent (activeSession undefined), direction 1 selects first and -1 selects last.
+  active = undefined;
+  sw.begin(-1, true);
+  sw.commit();
+  sw.begin(1, true);
+  sw.commit();
+  assert.deepEqual(opened, ['s1', 's3', 's1']);
+
+  sw.destroy();
+});

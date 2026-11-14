@@ -129,3 +129,11 @@
   3. 状态行与项目胶囊升至 `11.5px` 并显著提升明暗对比度（含选中浅灰底上的独立加深状态色与五拍静止竖条 `.74` 不透明度）。
   4. 在插件详情页新增 **「文字浓淡与字重」** 实时切换（默认 `crisp` 清晰实色、全卡 500 的 `medium` 凝实中黑、保留 0.1.11 灰阶的 `soft` 清隽细体）；已存 0.1.11 偏好的设备升级后自动获得默认 `crisp`。
 - 完成 26 项单元测试、`npm run check`、`npm run test:install`（Git 与 `.tgz`）及浏览器 fixture 明暗三档同屏对照、配置页与 480px 窄窗验证；真实 DSH 观感由用户升级体验确认。
+
+## 0.1.13 · 排除子代理会话 · 2026-11-14
+
+- 修正用户点击查看 subagent 后切换器出现子代理卡片的问题：
+  - 原因：旧版 `candidates()` 只在 `recent` 回退排序里过滤了子代理，而 `known = [...ids, current, ...history]` 允许已访问过的 subagent 留在候选集中；同时 `host.js` 在 `sidebarRight.mounted` 指向 subagent 时会将其写入 `sessionStorage['dsh-switcher.mru.v1']`。
+  - 处理：在 `src/plugin/core.js` 新增 `isSubagentSession()` 与 `resolveSessionTarget()`，结合 DSH 官方 `origin === 'subagent'`、`delegationDepth > 0`、`subagentCatalog` 映射及非顶层 `ids` 成员（加宿主 `sessions.subagentAddress` 检查），彻底禁止子代理进入 `candidates`、`history` 与 `exists`；同时保留顶层 `ids` 中不带 `origin: 'subagent'` 的普通 fork。
+  - 若用户在查看某个 subagent 时按 `Ctrl+Tab`，`SwitchCycle` 通过 `host.activeSession()` 锚定到其父/根普通会话（可直接切到其它会话或返回父会话，孤立 subagent 从首/末个普通会话开始循环），不再将 subagent 写入 MRU，并自动清理 `sessionStorage` 中已残留的旧 subagent 记录。
+- 完成构建、`npm run check`、28 项单元测试及 `npm run test:install`（Git 与 `.tgz`）回归验证，并重装到日常 DSH `desktop` profile。

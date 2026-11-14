@@ -1,11 +1,17 @@
-import { HISTORY_KEY, readHistory, remember, candidates, latestUserInput, hasDraft, sessionPresentation, sessionWorkspaceName } from './core.js';
+import { HISTORY_KEY, readHistory, remember, isSubagentSession, resolveSessionTarget, candidates, latestUserInput, hasDraft, sessionPresentation, sessionWorkspaceName } from './core.js';
 
 // Adapter for the public client services shipped in DSH 0.2.1-rc.2.
 export function createHostAdapter(ctx) {
-  let history = [], disposed = false, observedId, observedBinding, stopCurrent = () => {};
+  let history = [], disposed = false, observedId, recordedId, observedBinding, stopCurrent = () => {};
   const listeners = new Set(), cache = new Map(), previewOwners = new Set();
   try { history = readHistory(sessionStorage.getItem(HISTORY_KEY)); } catch { /* Memory-only history remains usable. */ }
   const current = () => ctx.sidebarRight.mounted.getSnapshot();
+  const isSubagent = (snapshot, id) => isSubagentSession(snapshot, id) ||
+    Boolean(id && typeof ctx.sessions.subagentAddress === 'function' && ctx.sessions.subagentAddress(id));
+  const activeSession = () => {
+    const snapshot = ctx.sessions.list.getSnapshot(), id = current();
+    return isSubagent(snapshot, id) ? resolveSessionTarget(snapshot, id) : id;
+  };
   const publish = () => { if (!disposed) for (const listener of listeners) listener(); };
   function watch(binding) {
     const id = binding.sessionId, session = binding.session;
@@ -51,13 +57,24 @@ export function createHostAdapter(ctx) {
   }
   function reconcile() {
     if (disposed) return;
-    const id = current();
-    if (id && id !== observedId) {
-      observedId = id; history = remember(history, id);
+    const snapshot = ctx.sessions.list.getSnapshot(), id = current();
+    const cleaned = history.filter(item => !isSubagent(snapshot, item));
+    let historyChanged = cleaned.length !== history.length;
+    if (historyChanged) history = cleaned;
+    const targetId = isSubagent(snapshot, id)
+      ? resolveSessionTarget(snapshot, id)
+      : (snapshot?.byId?.[id] ? id : undefined);
+    if (targetId && targetId !== recordedId) {
+      recordedId = targetId;
+      history = remember(history, targetId);
+      historyChanged = true;
+    }
+    if (historyChanged) {
       try { sessionStorage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch { /* Storage may be unavailable. */ }
     }
+    observedId = id;
     let binding;
-    try { binding = id ? ctx.sessions.binding(id) : undefined; } catch { /* Mount is still resolving. */ }
+    try { binding = id && !isSubagent(snapshot, id) ? ctx.sessions.binding(id) : undefined; } catch { /* Mount is still resolving. */ }
     if (binding !== observedBinding) {
       stopCurrent(); observedBinding = binding;
       stopCurrent = binding ? watch(binding) : () => {};
@@ -69,9 +86,13 @@ export function createHostAdapter(ctx) {
   reconcile();
   return {
     current,
-    candidates: () => candidates(ctx.sessions.list.getSnapshot(), ctx.workspaces.list.getSnapshot().archivedSessionIds || [], history, current(),
+    activeSession,
+    candidates: () => candidates(ctx.sessions.list.getSnapshot(), ctx.workspaces.list.getSnapshot().archivedSessionIds || [], history, activeSession(),
       [...cache].filter(([, row]) => row.draft).map(([id]) => id)),
-    exists: id => !!ctx.sessions.list.getSnapshot().byId[id] && !(ctx.workspaces.list.getSnapshot().archivedSessionIds || []).includes(id),
+    exists: id => {
+      const snapshot = ctx.sessions.list.getSnapshot();
+      return Boolean(snapshot?.byId?.[id]) && !isSubagent(snapshot, id) && !(ctx.workspaces.list.getSnapshot().archivedSessionIds || []).includes(id);
+    },
     theme: () => ctx.theme.getTheme().active.colorScheme === 'dark' ? 'dark' : 'light',
     row(id) {
       const summary = ctx.sessions.list.getSnapshot().byId[id], data = cache.get(id);
