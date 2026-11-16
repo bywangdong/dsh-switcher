@@ -50,6 +50,7 @@ window.__ModuleLoader__.load({
           const host = createHostAdapter(ctx, {
             getPrefs: () => prefsStore.getSnapshot(),
             getLocale: getHostLocale,
+            activityStorage: typeof localStorage !== 'undefined' ? localStorage : undefined,
           });
           const prefsListeners = new Set();
           const stopPrefs = prefsStore.subscribe(() => { for (const fn of [...prefsListeners]) fn(); });

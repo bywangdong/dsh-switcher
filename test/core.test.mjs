@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readHistory, remember, readVisitTimes, rememberVisit, isSubagentSession, resolveSessionTarget, aggregateSessionStatus, isSessionActive, candidates, SwitchCycle, latestUserInput, hasDraft, sessionPresentation, sessionWorkspaceName, sessionTimestamp, relativeTime, phraseBreaks, normalizeLocale, detectEnvironmentLocale, optionCopy, EDITION_OPTIONS, SCOPE_OPTIONS, PREFS_KEY, PREF_KEYS, DEFAULT_PREFS, normalizePrefs, samePrefs, readPrefs, isStatusFirstEdition, usesLensMotion, createPrefsStore } from '../src/plugin/core.js';
+import { readHistory, remember, readVisitTimes, rememberVisit, readActivityState, serializeActivityState, latestActivityTimestamp, idleRecency, isSubagentSession, resolveSessionTarget, aggregateSessionStatus, isSessionActive, candidates, SwitchCycle, latestUserInput, hasDraft, sessionPresentation, sessionWorkspaceName, sessionTimestamp, relativeTime, phraseBreaks, normalizeLocale, detectEnvironmentLocale, optionCopy, EDITION_OPTIONS, SCOPE_OPTIONS, PREFS_KEY, PREF_KEYS, DEFAULT_PREFS, normalizePrefs, samePrefs, readPrefs, isStatusFirstEdition, usesLensMotion, createPrefsStore } from '../src/plugin/core.js';
 
 test('MRU survives malformed storage and only contains unique ids', () => {
   assert.deepEqual(readHistory('{'), []);
@@ -207,12 +207,14 @@ test('recent sessions sort by time whether the host gives ISO strings or epoch n
   for (const value of [undefined, null, '', 'soon', NaN, -5, {}]) assert.equal(sessionTimestamp(value), 0);
 });
 
-test('an idle row shows when the session was last updated; other states keep their words', () => {
-  const now = new Date(2026, 10, 12, 9, 30).getTime(), ago = minutes => now - minutes * 60000;
+test('an idle row shows when the session was last updated and classifies 4 recency tiers; other states keep their words', () => {
+  const now = new Date(2026, 10, 12, 21, 30).getTime(), ago = minutes => now - minutes * 60000;
   assert.equal(relativeTime(ago(0), now), '刚刚'); assert.equal(relativeTime(ago(-3), now), '刚刚');
   assert.equal(relativeTime(ago(1), now), '1 分钟前'); assert.equal(relativeTime(ago(59), now), '59 分钟前');
-  assert.equal(relativeTime(ago(60), now), '1 小时前'); assert.equal(relativeTime(ago(23 * 60 + 59), now), '23 小时前');
-  // Past a day the label follows the calendar, not elapsed hours.
+  assert.equal(relativeTime(ago(60), now), '1 小时前'); assert.equal(relativeTime(ago(5 * 60 + 59), now), '5 小时前');
+  // >= 6h earlier on the same calendar day says `今天 HH:MM` instead of raw hour math; yesterday says `昨天`.
+  assert.equal(relativeTime(new Date(2026, 10, 12, 10, 0).getTime(), now), '今天 10:00');
+  assert.equal(relativeTime(new Date(2026, 10, 11, 23, 50).getTime(), now), '昨天');
   assert.equal(relativeTime(new Date(2026, 10, 11, 9, 0).getTime(), now), '昨天');
   assert.equal(relativeTime(new Date(2026, 10, 10, 23, 50).getTime(), now), '前天');
   assert.equal(relativeTime(new Date(2026, 10, 6, 12, 0).getTime(), now), '6 天前');
@@ -220,10 +222,19 @@ test('an idle row shows when the session was last updated; other states keep the
   assert.equal(relativeTime(new Date(2025, 11, 31, 12, 0).getTime(), now), '2025年12月31日');
   assert.equal(relativeTime(undefined, now), ''); assert.equal(relativeTime('无效', now), '');
 
+  assert.equal(idleRecency(ago(4), now), 'fresh');
+  assert.equal(idleRecency(ago(45), now), 'warm');
+  assert.equal(idleRecency(new Date(2026, 10, 12, 10, 0).getTime(), now), 'today');
+  assert.equal(idleRecency(new Date(2026, 10, 11, 23, 50).getTime(), now), 'cold');
+  assert.equal(idleRecency('broken', now), 'today');
+
   const idle = sessionPresentation({}, { updatedAt: new Date(ago(125)).toISOString() }, false, now);
-  assert.equal(idle.kind, 'idle'); assert.equal(idle.shortLabel, '2 小时前'); assert.equal(idle.label, '会话已就绪，2 小时前更新');
+  assert.equal(idle.kind, 'idle'); assert.equal(idle.recency, 'today');
+  assert.equal(idle.shortLabel, '2 小时前'); assert.equal(idle.label, '会话已就绪，2 小时前更新');
+  assert.equal(sessionPresentation({}, { updatedAt: ago(5) }, false, now).recency, 'fresh');
   assert.equal(sessionPresentation({}, { updatedAt: 'broken' }, false, now).shortLabel, '已就绪');
   assert.equal(sessionPresentation({ running: true }, { updatedAt: ago(125) }, false, now).shortLabel, '运行中');
+  assert.equal(sessionPresentation({ running: true }, { updatedAt: ago(125) }, false, now).recency, undefined);
   assert.equal(sessionPresentation({}, { updatedAt: ago(125) }, true, now).shortLabel, '有草稿');
 });
 
@@ -318,11 +329,13 @@ test('bilingual zh/en localization covers relative time, statuses, plan-review, 
   assert.equal(detectEnvironmentLocale({ documentElement: { lang: '' } }), 'zh');
   assert.equal(detectEnvironmentLocale(null), 'zh');
 
-  const now = new Date(2026, 10, 12, 9, 30).getTime();
+  const now = new Date(2026, 10, 12, 21, 30).getTime();
   const ago = minutes => now - minutes * 60000;
   assert.equal(relativeTime(ago(0), now, 'en'), 'Just now');
   assert.equal(relativeTime(ago(8), now, 'en'), '8m ago');
   assert.equal(relativeTime(ago(125), now, 'en'), '2h ago');
+  assert.equal(relativeTime(new Date(2026, 10, 12, 10, 5).getTime(), now, 'en'), 'Today 10:05');
+  assert.equal(relativeTime(new Date(2026, 10, 11, 23, 50).getTime(), now, 'en'), 'Yesterday');
   assert.equal(relativeTime(new Date(2026, 10, 11, 9, 0).getTime(), now, 'en'), 'Yesterday');
   assert.equal(relativeTime(new Date(2026, 10, 10, 23, 50).getTime(), now, 'en'), '2d ago');
   assert.equal(relativeTime(new Date(2026, 10, 6, 12, 0).getTime(), now, 'en'), '6d ago');
@@ -348,9 +361,22 @@ test('bilingual zh/en localization covers relative time, statuses, plan-review, 
     kind: 'unread', label: 'New result available', shortLabel: 'New result', draft: false,
   });
   assert.deepEqual(sessionPresentation({}, { updatedAt: ago(125) }, false, now, 'en'), {
-    kind: 'idle', label: 'Ready, updated 2h ago', shortLabel: '2h ago', draft: false,
+    kind: 'idle', recency: 'today', label: 'Ready, updated 2h ago', shortLabel: '2h ago', draft: false,
   });
   assert.equal(sessionPresentation({}, {}, false, now, 'en').shortLabel, 'Ready');
+
+  // Activity state serialization & scheduled/turn event time extraction.
+  const serialized = serializeActivityState(new Map([['a', 1700000005000], ['b', 1700000009000]]), new Set(['b', 'gone']), ['a', 'b']);
+  assert.deepEqual(readActivityState(serialized), {
+    activity: { b: 1700000009000, a: 1700000005000 },
+    unread: ['b'],
+  });
+  assert.deepEqual(readActivityState('{bad'), { activity: {}, unread: [] });
+  assert.equal(latestActivityTimestamp([
+    { event: { type: 'user/message', time: 1700000001000, data: { source: { kind: 'schedule' } } } },
+    { event: { type: 'assistant/message', time: 1700000008000, data: {} } },
+    { event: { type: 'session/title', time: 1700000099000, data: {} } },
+  ]), 1700000008000);
 
   const imgEntry = [{ event: { type: 'user/message', data: { role: 'user', source: { kind: 'user' }, content: [{ type: 'image', source: 'x' }] } } }];
   assert.equal(latestUserInput(imgEntry, 'en'), 'Sent attachment');

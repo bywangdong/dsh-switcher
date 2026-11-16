@@ -115,6 +115,22 @@ export function createFivebeatMotion(initialMode = 'classic') {
 
     if (kind === 'unread') return padSlots([dot(7, 16, .34, 2.35), line(12, 16, 19, 16, .56, 1.8), dot(25, 16, 1, 3.8)]);
     if (kind === 'draft') return padSlots([line(6, 12, 21, 12, .64, 1.65), line(6, 18, 15, 18, .64, 1.65), line(20, 23, 26, 17, .98, 2.1)]);
+    if (kind === 'idle-fresh') {
+      return padSlots([0, 1, 2, 3, 4].map(i => line(7 + i * 4.5, 11.8, 7 + i * 4.5, 20.2, .96, 2.05)));
+    }
+    if (kind === 'idle-warm') {
+      return padSlots([0, 1, 2, 3, 4].map(i => i < 3
+        ? line(7 + i * 4.5, 12.5, 7 + i * 4.5, 19.5, .9, 1.95)
+        : dot(7 + i * 4.5, 16, .42, 2.25)));
+    }
+    if (kind === 'idle-today') {
+      return padSlots([0, 1, 2, 3, 4].map(i => i < 1
+        ? line(7 + i * 4.5, 13, 7 + i * 4.5, 19, .82, 1.9)
+        : dot(7 + i * 4.5, 16, .38, 2.2)));
+    }
+    if (kind === 'idle-cold') {
+      return padSlots([0, 1, 2, 3, 4].map(i => dot(7 + i * 4.5, 16, .58, 2.35)));
+    }
     return padSlots([0, 1, 2, 3, 4].map(i => line(7 + i * 4.5, 13, 7 + i * 4.5, 19, .74, 1.85)));
   }
 
@@ -208,7 +224,7 @@ export function createFivebeatMotion(initialMode = 'classic') {
             item.morphing = true; item.morphElapsed = 0; wake();
           }
         }
-        const showBadge = !!hasDraft && !['idle', 'draft'].includes(next);
+        const showBadge = !!hasDraft && !String(next).startsWith('idle') && next !== 'draft';
         if (item.draft !== showBadge) { item.draft = showBadge; badge.setAttribute('opacity', showBadge ? '.85' : '0'); }
       };
       svg.dataset.state = kind;

@@ -21,8 +21,14 @@ data.forEach((row, i) => { row.workspaceName = projects[i]; row.placeholder = '�
 if (params.get('scene') === 'quiet') {
   const titles = ['整理本周的发布检查清单', '键盘导航态的按键选择', '梳理安装与回退流程里的备份点', '在窄窗口里验证 Scroll 行为',
     '统一多个工作区的会话焦点与键盘导航体验并补充回归验证记录'];
-  data.forEach((row, i) => Object.assign(row, { kind: 'idle', label: '会话已就绪', draft: false, title: titles[i],
-    workspaceName: i === 2 ? 'dsh-shortcutter' : 'Agent' }));
+  const enTitles = ['Prepare weekly release checklist', 'Keybinding choices for navigation mode', 'Audit backup points in install & rollback', 'Verify horizontal scroll in narrow windows',
+    'Unify multi-workspace focus and keyboard navigation regression suite'];
+  const quietAges = [4, 48, 390, 26 * 60, 9 * 24 * 60];
+  data.forEach((row, i) => Object.assign(row, {
+    kind: 'idle', label: '会话已就绪', draft: false, title: titles[i], enTitle: enTitles[i],
+    workspaceName: i === 2 ? 'dsh-shortcutter' : 'Agent',
+    updatedAt: new Date(Date.now() - quietAges[i] * 60000).toISOString(),
+  }));
 }
 if (params.get('scene') === 'screenshot') {
   const shot = [

@@ -1,5 +1,7 @@
 export const HISTORY_KEY = 'dsh-switcher.mru.v1';
 export const HISTORY_TIMES_KEY = 'dsh-switcher.mru-at.v1';
+export const ACTIVITY_KEY = 'dsh-switcher.activity.v1';
+export const READ_DWELL_MS = 4000;
 export const MIN_CANDIDATES = 3;
 export const MAX_CANDIDATES = 5;
 
@@ -141,6 +143,61 @@ export function rememberVisit(visitTimes, id, now = Date.now(), keepIds = null) 
     }
   }
   return out;
+}
+
+export function readActivityState(raw) {
+  try {
+    const value = JSON.parse(raw);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return { activity: {}, unread: [] };
+    const activity = readVisitTimes(JSON.stringify(value.activity || {}));
+    const unread = Array.isArray(value.unread)
+      ? [...new Set(value.unread.filter(id => typeof id === 'string' && id && id !== '__proto__' && id !== 'constructor' && id !== 'prototype'))].slice(0, 100)
+      : [];
+    return { activity, unread };
+  } catch {
+    return { activity: {}, unread: [] };
+  }
+}
+
+export function serializeActivityState(activityMap, unreadSet, keepIds = null) {
+  const allowed = keepIds ? new Set(keepIds) : null;
+  const entries = [];
+  const iter = activityMap instanceof Map ? activityMap.entries() : Object.entries(activityMap || {});
+  for (const [id, raw] of iter) {
+    if (typeof id !== 'string' || !id || id === '__proto__' || id === 'constructor' || id === 'prototype') continue;
+    if (allowed && !allowed.has(id)) continue;
+    const at = sessionTimestamp(raw);
+    if (at > 0) entries.push([id, at]);
+  }
+  entries.sort((a, b) => b[1] - a[1]);
+  const activity = Object.fromEntries(entries.slice(0, 100));
+  const unread = [];
+  if (unreadSet) {
+    for (const id of unreadSet) {
+      if (typeof id === 'string' && id && (!allowed || allowed.has(id))) unread.push(id);
+      if (unread.length >= 100) break;
+    }
+  }
+  return JSON.stringify({ activity, unread });
+}
+
+const ACTIVITY_EVENT_TYPES = new Set([
+  'turn/end', 'assistant/message', 'user/message', 'tool/result', 'turn/start', 'approval/asked', 'approval/decided',
+]);
+
+export function latestActivityTimestamp(entries) {
+  if (!Array.isArray(entries) || !entries.length) return 0;
+  let latest = 0;
+  for (let index = entries.length - 1; index >= 0; index--) {
+    const event = entries[index]?.event;
+    if (!event || (event.type && !ACTIVITY_EVENT_TYPES.has(event.type))) continue;
+    const at = sessionTimestamp(event.time);
+    if (at > latest) {
+      latest = at;
+      break;
+    }
+  }
+  return latest;
 }
 
 export function isSubagentSession(snapshot, id) {
@@ -286,6 +343,23 @@ export function sessionTimestamp(value) {
   return value < 1e11 ? value * 1000 : value; // Epoch seconds.
 }
 
+function calendarDayDiff(time, now) {
+  const then = new Date(time), today = new Date(now);
+  const midnight = date => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  return { then, today, days: Math.round((midnight(today) - midnight(then)) / 864e5) };
+}
+
+export function idleRecency(value, now = Date.now()) {
+  const time = sessionTimestamp(value);
+  if (!time) return 'today';
+  const minutes = Math.floor((now - time) / 60000);
+  if (minutes < 15) return 'fresh';
+  if (minutes < 120) return 'warm';
+  const { days } = calendarDayDiff(time, now);
+  if (days <= 0 || minutes < 360) return 'today';
+  return 'cold';
+}
+
 // Idle is the usual state, so its row says when instead of repeating "ready".
 export function relativeTime(value, now = Date.now(), locale = 'zh') {
   const time = sessionTimestamp(value);
@@ -294,14 +368,17 @@ export function relativeTime(value, now = Date.now(), locale = 'zh') {
   const minutes = Math.floor((now - time) / 60000);
   if (minutes < 1) return en ? 'Just now' : '刚刚'; // Also absorbs a clock that runs slightly ahead.
   if (minutes < 60) return en ? `${minutes}m ago` : `${minutes} 分钟前`;
-  if (minutes < 1440) {
+  if (minutes < 360) {
     const hours = Math.floor(minutes / 60);
     return en ? `${hours}h ago` : `${hours} 小时前`;
   }
-  const then = new Date(time), today = new Date(now);
-  const midnight = date => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-  const days = Math.round((midnight(today) - midnight(then)) / 864e5);
-  if (days <= 1) return en ? 'Yesterday' : '昨天';
+  const { then, today, days } = calendarDayDiff(time, now);
+  if (days <= 0) {
+    const hh = String(then.getHours()).padStart(2, '0');
+    const mm = String(then.getMinutes()).padStart(2, '0');
+    return en ? `Today ${hh}:${mm}` : `今天 ${hh}:${mm}`;
+  }
+  if (days === 1) return en ? 'Yesterday' : '昨天';
   if (!en && days === 2) return '前天';
   if (days < 7) return en ? `${days}d ago` : `${days} 天前`;
   if (en) {
@@ -415,7 +492,9 @@ export function sessionPresentation(status, summary, draft = false, now = Date.n
     label += en ? ', with draft' : '，有草稿';
     shortLabel += en ? ' · Draft' : ' · 有草稿';
   }
-  return { kind, label, shortLabel, draft };
+  const out = { kind, label, shortLabel, draft };
+  if (kind === 'idle') out.recency = idleRecency(summary?.updatedAt, now);
+  return out;
 }
 
 export const PREFS_KEY = 'dsh-switcher.prefs.v1';
@@ -451,8 +530,8 @@ export const PROJECT_OPTIONS = [
 ];
 
 export const SIGNAL_OPTIONS = [
-  { id: 'attention', label: '只标待处理', enLabel: 'Attention only', badge: '默认', enBadge: 'Default', detail: '颜色只表示需要你处理：待确认琥珀、新结果蓝；运行中改为中性色，靠图标动效示意', enDetail: 'Color means action needed: amber for pending, blue for new result; running stays neutral and uses motion' },
-  { id: 'classic', label: '活跃即着色', enLabel: 'All active', detail: '运行中与新结果同为蓝色，待确认为琥珀色', enDetail: 'Both running and new results use blue; pending interactions use amber' },
+  { id: 'attention', label: '分色辨态', enLabel: 'Distinct hues', badge: '默认', enBadge: 'Default', detail: '按关注度分色：待确认琥珀、新结果亮蓝（带右侧微点）；运行中用温润青绿区分于闲置时间，且不与新结果撞色', enDetail: 'Priority hues: amber for pending and blue for new results (with right dot); celadon jade for running so it stands out from idle without mimicking new results' },
+  { id: 'classic', label: '运行同蓝', enLabel: 'Shared blue', detail: '运行中与新结果共用蓝色并显示右侧微点，待确认为琥珀色', enDetail: 'Both running and new results share blue with right dot; pending interactions use amber' },
 ];
 
 export const TITLE_OPTIONS = [

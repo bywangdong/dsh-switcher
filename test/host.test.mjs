@@ -241,19 +241,37 @@ test('host tracks visit departure/arrival timestamps and respects live working-s
   }
 });
 
-test('host reliably marks newly completed tasks as unread across non-session panels, subagents, and scheduled races', () => {
+test('host reliably marks newly completed tasks as unread, requires foreground dwell before clearing, and reads scheduled event.time', async () => {
   const storage = new Map();
   globalThis.sessionStorage = { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) };
+  let windowFocused = true;
+  const docTarget = new EventTarget();
+  docTarget.hidden = false;
+  docTarget.hasFocus = () => windowFocused;
+  docTarget.querySelector = () => null;
+  globalThis.document = docTarget;
   try {
-    let now = Date.parse('2026-11-16T10:00:00.000Z');
+    let now = new Date(2026, 10, 16, 21, 0, 0).getTime();
     const mins = m => new Date(now - m * 60_000).toISOString();
+    const todayTenAm = new Date(2026, 10, 16, 10, 0, 0).getTime();
+    const nov3Iso = new Date(2026, 10, 3, 9, 0, 0).toISOString();
+    const schedEvents = store({
+      revision: 1,
+      change: { kind: 'replace' },
+      entries: [
+        { event: { type: 'user/message', time: todayTenAm, data: { source: { kind: 'schedule' }, content: '检测升级' } } },
+        { event: { type: 'turn/end', time: todayTenAm + 5_000, data: {} } },
+      ],
+    });
+    const schedSession = Object.assign(store({ openState: 'open' }), { eventSource: schedEvents });
     const list = store({
       phase: 'ready',
-      ids: ['a', 'b', 'c'],
+      ids: ['a', 'b', 'c', 'dailyCheck'],
       byId: {
         a: { displayTitle: '主会话 A', updatedAt: mins(5), running: true },
         b: { displayTitle: '父会话 B', updatedAt: mins(240), running: false },
         c: { displayTitle: '常规会话 C', updatedAt: mins(20), running: false },
+        dailyCheck: { displayTitle: '升级到 v0.2.2-alpha.3', updatedAt: nov3Iso, running: false },
       },
       projectionsBySession: {
         b: { values: { subagentCatalog: [{ id: 'sub-b1' }] } },
@@ -264,10 +282,10 @@ test('host reliably marks newly completed tasks as unread across non-session pan
     const ctx = {
       sessions: {
         list,
-        binding: () => undefined,
+        binding: id => (id === 'dailyCheck' ? { sessionId: id, ctx: {}, session: schedSession } : undefined),
         subagentAddress: id => (id === 'sub-b1' ? { parentSessionId: 'b' } : undefined),
         retain: id => ({
-          binding: { sessionId: id, ctx: {}, session: Object.assign(store({ openState: 'open' }), { eventSource: store({ entries: [] }) }) },
+          binding: { sessionId: id, ctx: {}, session: id === 'dailyCheck' ? schedSession : Object.assign(store({ openState: 'open' }), { eventSource: store({ entries: [] }) }) },
           ready: Promise.resolve(),
           release() {},
         }),
@@ -281,7 +299,7 @@ test('host reliably marks newly completed tasks as unread across non-session pan
       on: () => () => {},
     };
 
-    const host = createHostAdapter(ctx, { now: () => now });
+    const host = createHostAdapter(ctx, { now: () => now, readDwellMs: 35 });
     assert.equal(host.row('a').kind, 'running');
 
     // Case 1: User switches to Tasks/Plugins/Settings (`mounted` is `undefined`), while DSH keeps
@@ -293,10 +311,32 @@ test('host reliably marks newly completed tasks as unread across non-session pan
     assert.equal(host.row('a').kind, 'unread');
     assert.equal(host.row('a').shortLabel, '新结果');
 
-    // Opening `a` clears unread and uses `completedAt` so relativeTime is `刚刚` instead of stale age.
+    // Quick glance (< 35ms dwell) does NOT wipe `新结果`; switching away preserves it!
     mounted.set('a');
+    assert.equal(host.row('a').kind, 'unread', 'New result must not disappear at 0ms on brief glance');
+    mounted.set('c');
+    await new Promise(r => setTimeout(r, 45));
+    assert.equal(host.row('a').kind, 'unread', 'Leaving before dwell elapses preserves New result');
+
+    // Staying on `a` in foreground for >= dwell clears unread and transitions into `fresh` (`刚刚`).
+    mounted.set('a');
+    await new Promise(r => setTimeout(r, 45));
     assert.equal(host.row('a').kind, 'idle');
+    assert.equal(host.row('a').recency, 'fresh');
     assert.equal(host.row('a').shortLabel, '刚刚');
+
+    // Case 1b: Completion while DSH window is unfocused (`!document.hasFocus()`) marks even the mounted session unread!
+    windowFocused = false;
+    status.set(new Map([['a', { running: true, completionUnread: false }]]));
+    list.set({ ...list.getSnapshot(), byId: { ...list.getSnapshot().byId, a: { displayTitle: '主会话 A', updatedAt: mins(6), running: true } } });
+    now += 20_000;
+    list.set({ ...list.getSnapshot(), byId: { ...list.getSnapshot().byId, a: { displayTitle: '主会话 A', updatedAt: mins(6), running: false } } });
+    status.set(new Map([['a', { running: false, completionUnread: false }]]));
+    assert.equal(host.row('a').kind, 'unread', 'Completion while DSH is in background marks mounted session unread');
+    windowFocused = true;
+    docTarget.dispatchEvent(new Event('visibilitychange'));
+    await new Promise(r => setTimeout(r, 45));
+    assert.equal(host.row('a').kind, 'idle');
 
     // Case 2: Subagent `sub-b1` of 4h-old parent `b` runs and completes while user is on `a`.
     status.set(new Map([['sub-b1', { running: true, completionUnread: false }]]));
@@ -308,21 +348,30 @@ test('host reliably marks newly completed tasks as unread across non-session pan
     assert.equal(host.row('b').kind, 'unread');
     assert.equal(host.row('b').shortLabel, '新结果');
 
-    // User opens parent `b` (without opening `sub-b1` directly, so `UiSession` keeps `sub-b1` completionUnread: true).
+    // User opens parent `b` for >= dwell (without opening `sub-b1` directly, so `UiSession` keeps `sub-b1` completionUnread: true).
     mounted.set('b');
+    await new Promise(r => setTimeout(r, 45));
     assert.equal(host.row('b').kind, 'idle');
     mounted.set('a');
     assert.equal(host.row('b').kind, 'idle', 'parent must not re-latch onto sticky subagent completionUnread after parent was viewed');
 
-    // Case 3: Scheduled task `sched-1` emits status `true -> false` BEFORE `sessions.list` flushes `sched-1` into `byId`,
+    // Case 3: Recurring scheduled task `dailyCheck` created Nov 3 whose `eventSource` ran today at 10:00 AM
+    // updates from `11月3日` (`cold`) to `今天 10:00` (`today`), and persists across reload!
+    assert.equal(host.row('dailyCheck').shortLabel, '11月3日');
+    mounted.set('dailyCheck');
+    assert.equal(host.row('dailyCheck').shortLabel, '今天 10:00');
+    assert.equal(host.row('dailyCheck').recency, 'today');
+
+    // Case 4: Scheduled task `sched-1` emits status `true -> false` BEFORE `sessions.list` flushes `sched-1` into `byId`,
     // and `UiSession.reconcileStatus` wiped `completionUnread` during the gap.
+    mounted.set('a');
     status.set(new Map([['sched-1', { running: true, completionUnread: false }]]));
-    status.set(new Map()); // Simulate UiSession.reconcileStatus deleting `sched-1` while not yet in `byId`
+    status.set(new Map());
     now += 15_000;
     status.set(new Map([['sched-1', { running: false, completionUnread: false }]]));
     list.set({
       ...list.getSnapshot(),
-      ids: ['sched-1', 'a', 'b', 'c'],
+      ids: ['sched-1', 'a', 'b', 'c', 'dailyCheck'],
       byId: {
         ...list.getSnapshot().byId,
         'sched-1': { displayTitle: '定时巡检报告', blank: false, running: false, updatedAt: new Date(now).toISOString() },
@@ -331,7 +380,7 @@ test('host reliably marks newly completed tasks as unread across non-session pan
     assert.equal(host.row('sched-1').kind, 'unread');
     assert.equal(host.row('sched-1').shortLabel, '新结果');
 
-    // Case 4: Instant post-baseline task session `sched-instant` vs blank `+ 新会话` vs imported old session.
+    // Case 5: Instant post-baseline task session `sched-instant` vs blank `+ 新会话` vs imported old session.
     now += 10_000;
     list.set({
       ...list.getSnapshot(),
@@ -347,8 +396,14 @@ test('host reliably marks newly completed tasks as unread across non-session pan
     assert.equal(host.row('blank-new').kind, 'idle');
     assert.equal(host.row('imported-old').kind, 'idle');
 
+    // Reloading the host adapter preserves both `sched-1` unread status and `dailyCheck` today 10:00 timestamp!
     host.destroy();
+    const reloaded = createHostAdapter(ctx, { now: () => now, readDwellMs: 35 });
+    assert.equal(reloaded.row('sched-1').kind, 'unread');
+    assert.equal(reloaded.row('dailyCheck').shortLabel, '今天 10:00');
+    reloaded.destroy();
   } finally {
+    delete globalThis.document;
     delete globalThis.sessionStorage;
   }
 });

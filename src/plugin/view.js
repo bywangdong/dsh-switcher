@@ -15,6 +15,10 @@ export function mountSwitcher(container, host, options = {}) {
     stops.push(() => target.removeEventListener(name, listener, eventOptions));
   }
 
+  const motionKindOf = row => (row.kind === 'idle' && row.recency && prefs.motion !== 'classic')
+    ? `idle-${row.recency}`
+    : row.kind;
+
   function createFolderIcon() {
     const ns = 'http://www.w3.org/2000/svg';
     const wrap = document.createElement('span'); wrap.className = 'dsh-ws-icon'; wrap.setAttribute('aria-hidden', 'true');
@@ -173,8 +177,9 @@ export function mountSwitcher(container, host, options = {}) {
       motion.destroy();
       motion = createFivebeatMotion(prefs.motion);
       for (const id of cycle.ids) {
-        const node = rows.get(id), row = host.row(id);
-        node.motion = motion.mount(node.icon, row.kind, row.draft);
+        const node = rows.get(id), row = host.row(id), mKind = motionKindOf(row);
+        node.motion = motion.mount(node.icon, mKind, row.draft);
+        node.motionKind = mKind;
       }
     }
   }
@@ -249,6 +254,15 @@ export function mountSwitcher(container, host, options = {}) {
       }
 
       if (row.kind !== old.kind) { node.status.dataset.status = row.kind; node.icon.dataset.status = row.kind; }
+      if (row.recency !== old.recency) {
+        if (row.recency) {
+          node.status.dataset.recency = row.recency;
+          node.icon.dataset.recency = row.recency;
+        } else {
+          delete node.status.dataset.recency;
+          delete node.icon.dataset.recency;
+        }
+      }
       if (row.label !== old.label) { node.status.title = row.label; node.icon.title = row.label; }
       if (shortLabel !== (old.shortLabel || old.label)) {
         node.statusLabel.textContent = shortLabel;
@@ -259,7 +273,11 @@ export function mountSwitcher(container, host, options = {}) {
           );
         }
       }
-      if (row.kind !== old.kind || row.draft !== old.draft) node.motion.update(row.kind, row.draft);
+      const mKind = motionKindOf(row);
+      if (mKind !== node.motionKind || row.draft !== old.draft) {
+        node.motion.update(mKind, row.draft);
+        node.motionKind = mKind;
+      }
       node.value = row;
     }
 
@@ -304,8 +322,9 @@ export function mountSwitcher(container, host, options = {}) {
     overlay.dataset.revealed = 'true';
     motion = createFivebeatMotion(prefs.motion);
     for (const id of cycle.ids) {
-      const node = rows.get(id), row = node.value || host.row(id);
-      node.motion = motion.mount(node.icon, row.kind, row.draft);
+      const node = rows.get(id), row = node.value || host.row(id), mKind = motionKindOf(row);
+      node.motion = motion.mount(node.icon, mKind, row.draft);
+      node.motionKind = mKind;
     }
     releasePreview = host.preview(cycle.ids);
     refresh(); scrollSelected(true);

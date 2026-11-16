@@ -1,9 +1,13 @@
-import { HISTORY_KEY, HISTORY_TIMES_KEY, DEFAULT_PREFS, UI_COPY, normalizeLocale, detectEnvironmentLocale, uiCopy, readHistory, remember, readVisitTimes, rememberVisit, isSubagentSession, resolveSessionTarget, aggregateSessionStatus, candidates, sessionTimestamp, latestUserInput, hasDraft, sessionPresentation, sessionWorkspaceName } from './core.js';
+import { HISTORY_KEY, HISTORY_TIMES_KEY, ACTIVITY_KEY, READ_DWELL_MS, DEFAULT_PREFS, UI_COPY, normalizeLocale, detectEnvironmentLocale, uiCopy, readHistory, remember, readVisitTimes, rememberVisit, readActivityState, serializeActivityState, latestActivityTimestamp, isSubagentSession, resolveSessionTarget, aggregateSessionStatus, candidates, sessionTimestamp, latestUserInput, hasDraft, sessionPresentation, sessionWorkspaceName } from './core.js';
 
 // Adapter for the public client services shipped in DSH 0.2.1+ / 0.2.2+.
 export function createHostAdapter(ctx, options = {}) {
   const getPrefs = options.getPrefs || (() => DEFAULT_PREFS);
   const clock = options.now || (() => Date.now());
+  const readDwellMs = typeof options.readDwellMs === 'number' && options.readDwellMs >= 0 ? options.readDwellMs : READ_DWELL_MS;
+  const activityStorage = options.activityStorage !== undefined
+    ? options.activityStorage
+    : (typeof sessionStorage !== 'undefined' ? sessionStorage : undefined);
   const localeService = typeof ctx.get === 'function' ? ctx.get('locale') : ctx.locale;
   const resolveLocale = options.getLocale || (() => {
     const active = localeService?.getSnapshot?.()?.active;
@@ -11,6 +15,7 @@ export function createHostAdapter(ctx, options = {}) {
   });
 
   let history = [], visitTimes = {}, disposed = false, observedId, recordedId, observedBinding, stopCurrent = () => {};
+  let dwellId, dwellTimer;
   const listeners = new Set(), cache = new Map(), previewOwners = new Set();
   const wasRunning = new Map(), rawRunning = new Map(), completedAt = new Map();
   const localUnread = new Set(), seenHostUnread = new Set(), knownIds = new Set();
@@ -20,6 +25,15 @@ export function createHostAdapter(ctx, options = {}) {
     history = readHistory(sessionStorage.getItem(HISTORY_KEY));
     visitTimes = readVisitTimes(sessionStorage.getItem(HISTORY_TIMES_KEY));
   } catch { /* Memory-only history remains usable. */ }
+  try {
+    const saved = readActivityState(activityStorage?.getItem(ACTIVITY_KEY));
+    for (const [id, at] of Object.entries(saved.activity)) completedAt.set(id, at);
+    for (const id of saved.unread) localUnread.add(id);
+  } catch { /* Memory-only activity state remains usable. */ }
+
+  const persistActivity = (keepIds = null) => {
+    try { activityStorage?.setItem(ACTIVITY_KEY, serializeActivityState(completedAt, localUnread, keepIds)); } catch { /* Ignore quota/access errors. */ }
+  };
 
   const current = () => ctx.sidebarRight.mounted.getSnapshot();
   const isSubagent = (snapshot, id) => isSubagentSession(snapshot, id) ||
@@ -28,16 +42,55 @@ export function createHostAdapter(ctx, options = {}) {
     const snapshot = ctx.sessions.list.getSnapshot(), id = current();
     return isSubagent(snapshot, id) ? resolveSessionTarget(snapshot, id) : id;
   };
+  const isForegroundWindow = () => {
+    if (typeof document === 'undefined') return true;
+    if (document.hidden) return false;
+    if (typeof document.hasFocus === 'function' && !document.hasFocus()) return false;
+    if (typeof document.querySelector === 'function' && document.querySelector('[aria-modal="true"], dialog[open]')) return false;
+    return true;
+  };
+  const foregroundViewedId = (snapshot, rawMounted) => (
+    rawMounted && !isSubagent(snapshot, rawMounted) && snapshot?.byId?.[rawMounted] && isForegroundWindow()
+      ? rawMounted
+      : undefined
+  );
+  const clearDwell = () => {
+    if (dwellTimer !== undefined) { clearTimeout(dwellTimer); dwellTimer = undefined; }
+    dwellId = undefined;
+  };
   const publish = () => { if (!disposed) for (const listener of listeners) listener(); };
+  const markReadNow = id => {
+    if (dwellId === id) clearDwell();
+    if (!localUnread.delete(id)) return false;
+    persistActivity();
+    return true;
+  };
+  const syncReadDwell = fgId => {
+    if (!fgId || !localUnread.has(fgId)) {
+      clearDwell();
+      return false;
+    }
+    if (readDwellMs <= 0) return markReadNow(fgId);
+    if (dwellId === fgId && dwellTimer !== undefined) return false;
+    clearDwell();
+    dwellId = fgId;
+    dwellTimer = setTimeout(() => {
+      dwellTimer = undefined;
+      const target = dwellId;
+      dwellId = undefined;
+      if (disposed || !target) return;
+      const snap = ctx.sessions.list.getSnapshot();
+      if (foregroundViewedId(snap, current()) === target && markReadNow(target)) publish();
+    }, readDwellMs);
+    return false;
+  };
 
   function syncCompletionState(snapshot, statusMap, rawMounted, at) {
-    // Only a non-subagent session actually mounted on screen counts as currently viewed.
-    // When on Settings / Plugins / Tasks (`rawMounted === undefined`) or inside a subagent,
-    // completions on the parent session stay unread until the user opens that session.
-    const viewedTopId = rawMounted && !isSubagent(snapshot, rawMounted) && snapshot?.byId?.[rawMounted]
-      ? rawMounted
-      : undefined;
-    if (viewedTopId) localUnread.delete(viewedTopId);
+    // Only a non-subagent session actively visible in a focused, uncovered window counts as being read.
+    // Completions while on Tasks/Plugins/Settings, covered by a modal, or with DSH in the background stay unread,
+    // and opening an unread session requires `readDwellMs` before `New result` clears.
+    const viewedTopId = foregroundViewedId(snapshot, rawMounted);
+    let dirty = false;
 
     if (statusMap instanceof Map) {
       for (const [rawId, st] of statusMap.entries()) {
@@ -47,8 +100,8 @@ export function createHostAdapter(ctx, options = {}) {
           if (!seenHostUnread.has(rawId)) {
             seenHostUnread.add(rawId);
             if (targetId && targetId !== viewedTopId) {
-              localUnread.add(targetId);
-              if (baselineSeeded) completedAt.set(targetId, at);
+              if (!localUnread.has(targetId)) { localUnread.add(targetId); dirty = true; }
+              if (baselineSeeded) { completedAt.set(targetId, at); dirty = true; }
             }
           }
         } else {
@@ -58,10 +111,11 @@ export function createHostAdapter(ctx, options = {}) {
           const prevRaw = rawRunning.get(rawId);
           rawRunning.set(rawId, st.running);
           if (st.running) {
-            if (targetId && !isSubagent(snapshot, rawId)) localUnread.delete(targetId);
+            if (targetId && !isSubagent(snapshot, rawId) && localUnread.delete(targetId)) dirty = true;
           } else if (prevRaw === true && targetId && targetId !== viewedTopId && !snapshot?.byId?.[targetId]) {
             localUnread.add(targetId);
             completedAt.set(targetId, at);
+            dirty = true;
           }
         }
       }
@@ -78,13 +132,15 @@ export function createHostAdapter(ctx, options = {}) {
       const summaryTime = sessionTimestamp(summary.updatedAt);
       const freshArrival = !summaryTime || (at - summaryTime <= 5 * 60_000);
       if (runningNow) {
-        localUnread.delete(id);
+        if (localUnread.delete(id)) dirty = true;
       } else if (prevTop === true || (prevTop === undefined && rawRunning.get(id) === false && !knownIds.has(id) && baselineSeeded && !summary.blank)) {
         completedAt.set(id, at);
         if (id !== viewedTopId) localUnread.add(id);
+        dirty = true;
       } else if (baselineSeeded && !knownIds.has(id) && !summary.blank && id !== viewedTopId && freshArrival) {
         completedAt.set(id, at);
         localUnread.add(id);
+        dirty = true;
       }
       if (listReady) knownIds.add(id);
     }
@@ -94,14 +150,16 @@ export function createHostAdapter(ctx, options = {}) {
       for (const id of [...knownIds]) {
         if (!present.has(id)) {
           knownIds.delete(id);
-          localUnread.delete(id);
-          completedAt.delete(id);
+          if (localUnread.delete(id)) dirty = true;
+          if (completedAt.delete(id)) dirty = true;
           wasRunning.delete(id);
           rawRunning.delete(id);
           seenHostUnread.delete(id);
         }
       }
     }
+    syncReadDwell(viewedTopId);
+    if (dirty) persistActivity();
   }
 
   function watch(binding) {
@@ -120,32 +178,58 @@ export function createHostAdapter(ctx, options = {}) {
       if (disposed) return;
       const snapshot = session.getSnapshot();
       const previous = cache.get(id);
+      let activityPublished = false;
       const nextWindow = session.eventSource.getSnapshot();
       if (nextWindow !== eventWindow) {
         // DSH exposes contiguous event-window changes. Streaming assistant chunks
         // must not materialize and scan the complete history for an unchanged user line.
         const contiguous = eventWindow && Number.isInteger(nextWindow.revision) && nextWindow.revision === eventWindow.revision + 1;
         const change = contiguous ? nextWindow.change : undefined;
-        let found = null;
-        if (change?.kind === 'append' && Array.isArray(change.entries)) found = extractInput(change.entries);
-        else if (change?.kind === 'prepend' && Array.isArray(change.entries)) {
+        let found = null, latestAt = 0, settled = false;
+        if (change?.kind === 'append' && Array.isArray(change.entries)) {
+          found = extractInput(change.entries);
+          latestAt = latestActivityTimestamp(change.entries);
+          if (found && id === foregroundViewedId(ctx.sessions.list.getSnapshot(), current())) markReadNow(id);
+        } else if (change?.kind === 'prepend' && Array.isArray(change.entries)) {
           // A cached fallback can predate this window's actual latest user input.
           if (!windowHasInput) found = extractInput(change.entries);
-        } else if (change?.kind !== 'settle-assistant') {
-          found = extractInput(nextWindow.entries); windowHasInput = Boolean(found);
+        } else if (change?.kind === 'settle-assistant') {
+          latestAt = change.entry ? latestActivityTimestamp([change.entry]) : 0;
+          settled = true;
+        } else {
+          const windowEntries = nextWindow.entries;
+          found = extractInput(windowEntries); windowHasInput = Boolean(found);
+          latestAt = latestActivityTimestamp(windowEntries);
+          settled = true;
         }
         if (found) { text = found.text; attachmentOnly = found.attachmentOnly; windowHasInput = true; }
+        const prevRecorded = Math.max(
+          completedAt.get(id) || 0,
+          sessionTimestamp(ctx.sessions.list.getSnapshot()?.byId?.[id]?.updatedAt),
+        );
+        if (latestAt > (completedAt.get(id) || 0)) {
+          completedAt.set(id, latestAt);
+          if (settled || latestAt - prevRecorded >= 30_000) {
+            persistActivity();
+            activityPublished = latestAt > prevRecorded;
+          }
+        }
         eventWindow = nextWindow;
       }
       const draftState = input?.getSnapshot();
+      const draftNow = hasDraft(draftState?.draft) || !!draftState?.attachmentIds?.length;
+      if (previous && !previous.draft && draftNow && id === foregroundViewedId(ctx.sessions.list.getSnapshot(), current())) {
+        if (markReadNow(id)) activityPublished = true;
+      }
       const next = {
         text,
         attachmentOnly,
         ready: snapshot.openState === 'open',
         error: snapshot.openState === 'error',
-        draft: hasDraft(draftState?.draft) || !!draftState?.attachmentIds?.length,
+        draft: draftNow,
       };
       if (
+        !activityPublished &&
         previous &&
         next.text === previous.text &&
         next.attachmentOnly === previous.attachmentOnly &&
@@ -212,6 +296,11 @@ export function createHostAdapter(ctx, options = {}) {
     publish();
   }
 
+  function onForegroundChange() {
+    if (disposed) return;
+    if (syncReadDwell(foregroundViewedId(ctx.sessions.list.getSnapshot(), current()))) publish();
+  }
+
   const stops = [
     ctx.sessions.list.subscribe(reconcile),
     ctx.sidebarRight.mounted.subscribe(reconcile),
@@ -219,6 +308,18 @@ export function createHostAdapter(ctx, options = {}) {
     ctx.workspaces.list.subscribe(publish),
     ctx.on('theme/change', publish),
   ];
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('focus', onForegroundChange);
+    window.addEventListener('blur', onForegroundChange);
+    stops.push(() => {
+      window.removeEventListener('focus', onForegroundChange);
+      window.removeEventListener('blur', onForegroundChange);
+    });
+  }
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('visibilitychange', onForegroundChange);
+    stops.push(() => document.removeEventListener('visibilitychange', onForegroundChange));
+  }
   if (typeof localeService?.subscribe === 'function') stops.push(localeService.subscribe(publish));
   if (typeof ctx.on === 'function') stops.push(ctx.on('locale/change', publish));
   reconcile();
@@ -253,10 +354,10 @@ export function createHostAdapter(ctx, options = {}) {
       const summary = snapshot.byId[id], data = cache.get(id), nowAt = clock();
       const locale = resolveLocale(), copy = uiCopy(locale);
       const rawMounted = current();
-      const viewed = Boolean(rawMounted && !isSubagent(snapshot, rawMounted) && rawMounted === id);
+      const fgId = foregroundViewedId(snapshot, rawMounted);
       const ownUnread = Boolean(statusMap.get(id)?.completionUnread);
       const effectiveStatus = aggregateSessionStatus(snapshot, statusMap, id, {
-        unread: !viewed && (localUnread.has(id) || ownUnread),
+        unread: localUnread.has(id) || (fgId !== id && ownUnread),
       });
       const effectiveUpdatedAt = Math.max(sessionTimestamp(summary?.updatedAt), completedAt.get(id) || 0) || summary?.updatedAt;
       const text = data?.attachmentOnly ? copy.sentAttachment : (data?.text || '');
@@ -299,7 +400,7 @@ export function createHostAdapter(ctx, options = {}) {
     },
     open: id => ctx.uiWorkspace.openSession(id),
     destroy() {
-      disposed = true; stopCurrent();
+      disposed = true; clearDwell(); stopCurrent();
       for (const release of [...previewOwners]) release();
       for (const stop of stops) stop();
       listeners.clear(); cache.clear();
