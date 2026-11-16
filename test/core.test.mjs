@@ -1,19 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readHistory, remember, isSubagentSession, resolveSessionTarget, candidates, SwitchCycle, latestUserInput, hasDraft, sessionPresentation, sessionWorkspaceName, sessionTimestamp, relativeTime, phraseBreaks, PREFS_KEY, PREF_KEYS, DEFAULT_PREFS, normalizePrefs, samePrefs, readPrefs, isStatusFirstEdition, usesLensMotion, createPrefsStore } from '../src/plugin/core.js';
+import { readHistory, remember, readVisitTimes, rememberVisit, isSubagentSession, resolveSessionTarget, aggregateSessionStatus, isSessionActive, candidates, SwitchCycle, latestUserInput, hasDraft, sessionPresentation, sessionWorkspaceName, sessionTimestamp, relativeTime, phraseBreaks, normalizeLocale, detectEnvironmentLocale, optionCopy, EDITION_OPTIONS, SCOPE_OPTIONS, PREFS_KEY, PREF_KEYS, DEFAULT_PREFS, normalizePrefs, samePrefs, readPrefs, isStatusFirstEdition, usesLensMotion, createPrefsStore } from '../src/plugin/core.js';
 
 test('MRU survives malformed storage and only contains unique ids', () => {
   assert.deepEqual(readHistory('{'), []);
   assert.deepEqual(readHistory('["b",null,"a","b",8]'), ['b', 'a']);
   assert.deepEqual(remember(['b', 'a', 'c'], 'a'), ['a', 'b', 'c']);
+
+  assert.deepEqual(readVisitTimes('{'), {});
+  assert.deepEqual(readVisitTimes('["a"]'), {});
+  assert.deepEqual(readVisitTimes('{"a":1700000000,"b":"2026-11-14T10:00:00.000Z","bad":-1,"__proto__":99}'), {
+    a: 1700000000000,
+    b: Date.parse('2026-11-14T10:00:00.000Z'),
+  });
+  const stamped = rememberVisit({ a: 1000, stale: 2000 }, 'b', 3000, ['a', 'b']);
+  assert.deepEqual(stamped, { b: 3000000, a: 1000000 });
 });
 test('candidates follow visits and exclude archives, deletions and subagents', () => {
   const snapshot = { ids: ['a', 'b', 'c', 'd', 'child'], byId: {
     a: { updatedAt: 1 }, b: { updatedAt: 9 }, c: { updatedAt: 4 }, d: { updatedAt: 5 },
     child: { parentId: 'a', origin: 'subagent', updatedAt: 20 },
   } };
-  assert.deepEqual(candidates(snapshot, ['b'], ['a', 'gone', 'c'], 'a'), ['a', 'c', 'd']);
-  assert.deepEqual(candidates(snapshot, [], ['a', 'child'], 'a'), ['a', 'b', 'd', 'c']);
+  assert.deepEqual(candidates(snapshot, ['b'], ['a', 'gone', 'c'], 'a', [], { scope: 'classic' }), ['a', 'c', 'd']);
+  assert.deepEqual(candidates(snapshot, [], ['a', 'child'], 'a', [], { scope: 'classic' }), ['a', 'b', 'd', 'c']);
 });
 test('cycling freezes MRU, wraps both ways, and has no commit side effects', () => {
   const history = ['a', 'b', 'c'];
@@ -72,11 +81,91 @@ test('subagents never enter candidates, resolve to their root parent, and ordina
 
   // Even when present in current, history, and draftIds, subagents never appear; ordinary forks remain switchable.
   assert.deepEqual(
-    candidates(snapshot, [], ['subListed', 'subCatalogOnly', 'subDepth', 'b'], 'subNested', ['subCatalogProp']),
+    candidates(snapshot, [], ['subListed', 'subCatalogOnly', 'subDepth', 'b'], 'subNested', ['subCatalogProp'], { scope: 'classic' }),
     ['a', 'b', 'cleanFork', 'legacyFork'],
   );
   // Viewing an orphan subagent excludes it cleanly and falls back to the remaining real sessions.
-  assert.deepEqual(candidates(snapshot, ['a'], ['subOrphan', 'b'], 'subOrphan'), ['b', 'cleanFork', 'legacyFork']);
+  assert.deepEqual(candidates(snapshot, ['a'], ['subOrphan', 'b'], 'subOrphan', [], { scope: 'classic' }), ['b', 'cleanFork', 'legacyFork']);
+});
+
+test('hot working set maintains a 3-card floor while expanding for active, unread, draft, and recently viewed old sessions', () => {
+  const now = Date.parse('2026-11-14T18:00:00.000Z');
+  const minsAgo = m => new Date(now - m * 60_000).toISOString();
+  const snapshot = {
+    ids: ['cur', 'warmIdle', 'warmIdle2', 'midIdle', 'yesterdayIdle', 'ancientReadRef', 'overnightUnread', 'waitingApproval'],
+    byId: {
+      cur: { updatedAt: minsAgo(5) },
+      warmIdle: { updatedAt: minsAgo(25) },
+      warmIdle2: { updatedAt: minsAgo(55) },
+      midIdle: { updatedAt: minsAgo(240) }, // 4h ago (> 2h hot, <= 8h day)
+      yesterdayIdle: { updatedAt: minsAgo(1500) }, // 25h ago
+      ancientReadRef: { updatedAt: minsAgo(7200) }, // 5 days ago, no new messages
+      overnightUnread: { updatedAt: minsAgo(900) }, // 15h ago
+      waitingApproval: { updatedAt: minsAgo(600) }, // 10h ago
+    },
+  };
+
+  // 1. Default `hot` keeps the 3 warm sessions and drops 4h/25h/5d cold filler cards.
+  assert.deepEqual(candidates(snapshot, [], ['cur'], 'cur', [], { now }), ['cur', 'warmIdle', 'warmIdle2']);
+
+  // 2. When fewer than 3 sessions are warm (or all are > 24h cold), floor of 3 fills from most recent MRU/updated; 1-2 total sessions stay safe.
+  const allCold = {
+    ids: ['s1', 's2', 's3', 's4', 's5'],
+    byId: {
+      s1: { updatedAt: minsAgo(1600) },
+      s2: { updatedAt: minsAgo(1700) },
+      s3: { updatedAt: minsAgo(1800) },
+      s4: { updatedAt: minsAgo(1900) },
+      s5: { updatedAt: minsAgo(2000) },
+    },
+  };
+  assert.deepEqual(candidates(allCold, [], ['s1', 's3'], 's1', [], { now }), ['s1', 's3', 's2']);
+  assert.deepEqual(
+    candidates({ ids: ['s1', 's2'], byId: { s1: { updatedAt: minsAgo(1600) }, s2: { updatedAt: minsAgo(1700) } } }, [], [], 's1', [], { now }),
+    ['s1', 's2'],
+  );
+  assert.deepEqual(candidates({ ids: ['only'], byId: { only: { updatedAt: minsAgo(2000) } } }, [], [], 'only', [], { now }), ['only']);
+
+  // 3. Viewing a 5-day-old session read-only expands `hot` to 4 cards, then shrinks back to 3 once > 2h cold.
+  assert.deepEqual(
+    candidates(snapshot, [], ['cur', 'ancientReadRef'], 'cur', [], { now, visitedAt: { ancientReadRef: now - 20 * 60_000 } }),
+    ['cur', 'ancientReadRef', 'warmIdle', 'warmIdle2'],
+  );
+  assert.deepEqual(
+    candidates(snapshot, [], ['cur', 'ancientReadRef'], 'cur', [], { now, visitedAt: { ancientReadRef: now - 150 * 60_000 } }),
+    ['cur', 'warmIdle', 'warmIdle2'],
+  );
+
+  // 4. Uncompleted states (running, approval, unread, draft) bypass the time window across overnight gaps.
+  const statuses = new Map([
+    ['overnightUnread', { completionUnread: true }],
+    ['waitingApproval', { pendingInteraction: { kind: 'approval' } }],
+  ]);
+  assert.equal(isSessionActive(statuses.get('overnightUnread'), snapshot.byId.overnightUnread, false), true);
+  assert.equal(isSessionActive(statuses.get('waitingApproval'), snapshot.byId.waitingApproval, false), true);
+  assert.equal(isSessionActive({}, snapshot.byId.yesterdayIdle, false), false);
+  assert.equal(isSessionActive({}, snapshot.byId.yesterdayIdle, true), true);
+
+  assert.deepEqual(
+    candidates(snapshot, [], ['cur'], 'cur', ['yesterdayIdle'], { now, statuses }),
+    ['cur', 'warmIdle', 'warmIdle2', 'waitingApproval', 'overnightUnread'], // `hot` expands up to 5 when 5+ are genuinely hot
+  );
+  assert.deepEqual(
+    candidates(snapshot, [], ['cur'], 'cur', [], { now, statuses: new Map([['waitingApproval', { pendingInteraction: { kind: 'approval' } }]]) }),
+    ['cur', 'warmIdle', 'warmIdle2', 'waitingApproval'], // 4 hot sessions -> 4 cards (does not pad to 5 with cold `midIdle`)
+  );
+  assert.deepEqual(
+    candidates(snapshot, [], ['cur'], 'cur', [], { now, statuses, scope: 'top3' }),
+    ['cur', 'warmIdle', 'warmIdle2'], // `top3` caps at 3
+  );
+  assert.deepEqual(
+    candidates(snapshot, [], ['cur'], 'cur', [], { now, statuses, scope: 'day' }),
+    ['cur', 'warmIdle', 'warmIdle2', 'midIdle', 'waitingApproval'], // `day` includes 4h `midIdle`, caps at 5
+  );
+  assert.deepEqual(
+    candidates(snapshot, [], ['cur'], 'cur', [], { now, scope: 'classic' }),
+    ['cur', 'warmIdle', 'warmIdle2', 'midIdle', 'waitingApproval'], // `classic` fills to 5 even when all idle
+  );
 });
 test('excerpt is the latest human input, never assistant text or tool output', () => {
   const user = content => ({ event: { type: 'user/message', data: { role: 'user', source: { kind: 'user' }, content } } });
@@ -110,7 +199,7 @@ test('recent sessions sort by time whether the host gives ISO strings or epoch n
     a: { updatedAt: '2026-11-10T08:00:00.000Z' }, b: { updatedAt: '2026-11-12T08:00:00.000Z' },
     c: { updatedAt: '2026-11-11T08:00:00.000Z' }, d: { updatedAt: 'not a date' },
   } };
-  assert.deepEqual(candidates(iso, [], [], 'a'), ['a', 'b', 'c', 'd']);
+  assert.deepEqual(candidates(iso, [], [], 'a', [], { scope: 'classic' }), ['a', 'b', 'c', 'd']);
   const at = Date.parse('2026-11-12T08:00:00.000Z');
   assert.equal(sessionTimestamp('2026-11-12T08:00:00.000Z'), at);
   assert.equal(sessionTimestamp(at), at); assert.equal(sessionTimestamp(at / 1000), at);
@@ -164,17 +253,18 @@ test('workspace title follows authoritative membership and falls back to directo
 });
 
 test('preferences validate safely, persist to storage, and sync across updates', () => {
-  const base = { edition: 'kibutsu', motion: 'balanced', ink: 'crisp', project: 'plain', signal: 'attention', title: 'lead' };
+  const base = { edition: 'kibutsu', motion: 'balanced', ink: 'crisp', project: 'plain', signal: 'attention', title: 'lead', scope: 'hot' };
   assert.deepEqual(DEFAULT_PREFS, base);
   assert.deepEqual(PREF_KEYS, Object.keys(base));
   assert.deepEqual(readPrefs(''), base);
   assert.deepEqual(readPrefs('{broken'), base);
   assert.deepEqual(normalizePrefs({ edition: 'unknown', motion: 'orbital', ink: 'medium' }), { ...base, motion: 'orbital', ink: 'medium' });
   assert.deepEqual(normalizePrefs({ edition: 'split', motion: 'invalid', ink: 'invalid' }), { ...base, edition: 'split' });
-  assert.deepEqual(normalizePrefs({ project: 'chip', signal: 'classic', title: 'even' }), { ...base, project: 'chip', signal: 'classic', title: 'even' });
-  assert.deepEqual(normalizePrefs({ project: 'constructor', signal: 1, title: null }), base);
+  assert.deepEqual(normalizePrefs({ project: 'chip', signal: 'classic', title: 'even', scope: 'top3' }), { ...base, project: 'chip', signal: 'classic', title: 'even', scope: 'top3' });
+  assert.deepEqual(normalizePrefs({ project: 'constructor', signal: 1, title: null, scope: 'forever' }), base);
   assert.equal(samePrefs(base, { ...base }), true);
   assert.equal(samePrefs(base, { ...base, title: 'even' }), false);
+  assert.equal(samePrefs(base, { ...base, scope: 'classic' }), false);
 
   for (const ed of ['kibutsu', 'sujian', 'jiechi', 'moyun']) assert.equal(isStatusFirstEdition(ed), true);
   assert.equal(isStatusFirstEdition('b2'), false);
@@ -215,4 +305,120 @@ test('preferences validate safely, persist to storage, and sync across updates',
   assert.equal(notifications, 4);
   assert.deepEqual(store.getSnapshot(), DEFAULT_PREFS);
   unsub();
+});
+
+test('bilingual zh/en localization covers relative time, statuses, plan-review, fallbacks, and option copy', () => {
+  assert.equal(normalizeLocale('zh-CN'), 'zh');
+  assert.equal(normalizeLocale('zh-Hant'), 'zh');
+  assert.equal(normalizeLocale('en-US'), 'en');
+  assert.equal(normalizeLocale('fr'), 'en');
+  assert.equal(normalizeLocale(''), 'zh');
+  assert.equal(detectEnvironmentLocale({ documentElement: { lang: 'en-GB' } }), 'en');
+  assert.equal(detectEnvironmentLocale({ documentElement: { lang: 'zh-CN' } }), 'zh');
+  assert.equal(detectEnvironmentLocale({ documentElement: { lang: '' } }), 'zh');
+  assert.equal(detectEnvironmentLocale(null), 'zh');
+
+  const now = new Date(2026, 10, 12, 9, 30).getTime();
+  const ago = minutes => now - minutes * 60000;
+  assert.equal(relativeTime(ago(0), now, 'en'), 'Just now');
+  assert.equal(relativeTime(ago(8), now, 'en'), '8m ago');
+  assert.equal(relativeTime(ago(125), now, 'en'), '2h ago');
+  assert.equal(relativeTime(new Date(2026, 10, 11, 9, 0).getTime(), now, 'en'), 'Yesterday');
+  assert.equal(relativeTime(new Date(2026, 10, 10, 23, 50).getTime(), now, 'en'), '2d ago');
+  assert.equal(relativeTime(new Date(2026, 10, 6, 12, 0).getTime(), now, 'en'), '6d ago');
+  assert.equal(relativeTime(new Date(2026, 10, 5, 12, 0).getTime(), now, 'en'), 'Nov 5');
+  assert.equal(relativeTime(new Date(2025, 11, 31, 12, 0).getTime(), now, 'en'), 'Dec 31, 2025');
+
+  assert.deepEqual(sessionPresentation({ pendingInteraction: { kind: 'plan-review' } }, {}, false, now, 'zh'), {
+    kind: 'approval', label: '等待审阅计划', shortLabel: '计划待审', draft: false,
+  });
+  assert.deepEqual(sessionPresentation({ pendingInteraction: { kind: 'plan-review' } }, {}, true, now, 'en'), {
+    kind: 'approval', label: 'Plan awaiting review, with draft', shortLabel: 'Plan review · Draft', draft: true,
+  });
+  assert.deepEqual(sessionPresentation({ pendingInteraction: { kind: 'approval' } }, {}, false, now, 'en'), {
+    kind: 'approval', label: 'Waiting for approval', shortLabel: 'Approval', draft: false,
+  });
+  assert.deepEqual(sessionPresentation({ pendingInteraction: { kind: 'question' } }, {}, false, now, 'en'), {
+    kind: 'approval', label: 'Waiting for answer', shortLabel: 'Answer', draft: false,
+  });
+  assert.deepEqual(sessionPresentation({ running: true }, {}, true, now, 'en'), {
+    kind: 'running', label: 'Running, with draft', shortLabel: 'Running · Draft', draft: true,
+  });
+  assert.deepEqual(sessionPresentation({ completionUnread: true }, {}, false, now, 'en'), {
+    kind: 'unread', label: 'New result available', shortLabel: 'New result', draft: false,
+  });
+  assert.deepEqual(sessionPresentation({}, { updatedAt: ago(125) }, false, now, 'en'), {
+    kind: 'idle', label: 'Ready, updated 2h ago', shortLabel: '2h ago', draft: false,
+  });
+  assert.equal(sessionPresentation({}, {}, false, now, 'en').shortLabel, 'Ready');
+
+  const imgEntry = [{ event: { type: 'user/message', data: { role: 'user', source: { kind: 'user' }, content: [{ type: 'image', source: 'x' }] } } }];
+  assert.equal(latestUserInput(imgEntry, 'en'), 'Sent attachment');
+  assert.equal(sessionWorkspaceName({}, 'x', {}, 'en'), 'Ungrouped');
+
+  assert.deepEqual(optionCopy(EDITION_OPTIONS[0], 'en'), {
+    label: '02 Kibutsu',
+    badge: 'Default',
+    detail: EDITION_OPTIONS[0].enDetail,
+  });
+  assert.deepEqual(optionCopy(SCOPE_OPTIONS[0], 'zh'), {
+    label: '热工作集',
+    badge: '默认',
+    detail: SCOPE_OPTIONS[0].detail,
+  });
+});
+
+test('subagent status rolls up onto parent session and keeps hot working set pinned', () => {
+  const now = Date.parse('2026-11-16T10:00:00.000Z');
+  const minsAgo = m => new Date(now - m * 60_000).toISOString();
+  const snapshot = {
+    ids: ['cur', 'warm1', 'warm2', 'parentOld', 'coldIdle'],
+    byId: {
+      cur: { updatedAt: minsAgo(2) },
+      warm1: { updatedAt: minsAgo(15) },
+      warm2: { updatedAt: minsAgo(35) },
+      parentOld: { updatedAt: minsAgo(600) },
+      coldIdle: { updatedAt: minsAgo(700) },
+      subInById: { parentId: 'parentOld', origin: 'subagent', updatedAt: minsAgo(1) },
+    },
+    projectionsBySession: {
+      parentOld: { values: { subagentCatalog: [{ id: 'subCatalogOnly' }] } },
+    },
+  };
+
+  // Catalog-only subagent resolves to parent even before its own byId summary arrives.
+  assert.equal(resolveSessionTarget(snapshot, 'subCatalogOnly'), 'parentOld');
+
+  // Subagent running rolls up to parent.
+  assert.deepEqual(
+    aggregateSessionStatus(snapshot, new Map([['subCatalogOnly', { running: true }]]), 'parentOld'),
+    { running: true, pendingInteraction: undefined, completionUnread: false },
+  );
+
+  // Subagent approval + completionUnread roll up cleanly when parent is idle.
+  assert.deepEqual(
+    aggregateSessionStatus(snapshot, new Map([
+      ['subInById', { pendingInteraction: { kind: 'approval' } }],
+      ['subCatalogOnly', { completionUnread: true }],
+    ]), 'parentOld'),
+    { running: false, pendingInteraction: { kind: 'approval' }, completionUnread: true },
+  );
+
+  // Subagent unread keeps an otherwise 10h-old parent pinned in the 2h hot working set.
+  assert.deepEqual(
+    candidates(snapshot, [], ['cur'], 'cur', [], {
+      now,
+      statuses: new Map([['subCatalogOnly', { completionUnread: true }]]),
+    }),
+    ['cur', 'warm1', 'warm2', 'parentOld'],
+  );
+
+  // `completedAt` elevates recency order even when host `updatedAt` did not advance on turn end.
+  assert.deepEqual(
+    candidates(snapshot, [], ['cur'], 'cur', [], {
+      now,
+      completedAt: new Map([['coldIdle', now - 60_000]]),
+    }),
+    ['cur', 'coldIdle', 'warm1', 'warm2'],
+  );
 });

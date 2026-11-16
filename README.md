@@ -40,11 +40,11 @@ DeepSeek Harness 的 Ctrl + Tab 最近会话切换器。独立于 `dshMagicShort
 
 Git 安装会通过 `prepare` 自动构建 `lib/`，构建只使用 Node.js 标准库。仓库仍只提交源码，安装后的包携带完整的客户端和宿主入口。
 
-在 DSH 添加插件界面填写 `git+https://github.com/iobee/dsh-switcher.git#main`，或使用 macOS 官方桌面应用自带的 CLI：
+在 DSH 添加插件界面填写 `git+https://github.com/bywangdong/dsh-switcher.git#main`，或使用 macOS 官方桌面应用自带的 CLI：
 
 ```sh
 "/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh" \
-  plugin --profile desktop add 'git+https://github.com/iobee/dsh-switcher.git#main'
+  plugin --profile desktop add 'git+https://github.com/bywangdong/dsh-switcher.git#main'
 ```
 
 首次安装若出现 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`，按 DSH 提示打开该 profile 的 `pnpm-workspace.yaml`，把 pnpm 输出的完整包键及 `true` 值加入 `allowBuilds`，保留已有条目，再运行同一命令。授权允许本插件在安装时执行构建脚本；pnpm 11 的 Git 授权键含仓库地址和提交，不能只写 `dsh-switcher`。推荐把 `#main` 换成确认过的完整 commit SHA；使用精确提交授权时，升级到新提交需重新授权。Git 安装不要加 `--ignore-scripts`。

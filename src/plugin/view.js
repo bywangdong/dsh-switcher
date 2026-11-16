@@ -1,12 +1,12 @@
-import { SwitchCycle, phraseBreaks, normalizePrefs, samePrefs, isStatusFirstEdition, usesLensMotion } from './core.js';
+import { SwitchCycle, phraseBreaks, normalizePrefs, samePrefs, isStatusFirstEdition, usesLensMotion, normalizeLocale, uiCopy } from './core.js';
 import { createFivebeatMotion } from './motion.js';
 import { installSwitcherKeyboard } from './keyboard.js';
 
 export function mountSwitcher(container, host, options = {}) {
   const inline = Boolean(options.inline);
   const reducedMotion = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
-  let cycle, overlay, list, lens, motion, timer, returnFocus, returnSelection, resize, selectedId, releasePreview = () => {};
-  let prefs = normalizePrefs(host.prefs?.());
+  let cycle, overlay, panel, list, lens, motion, timer, returnFocus, returnSelection, resize, selectedId, releasePreview = () => {};
+  let prefs = normalizePrefs(host.prefs?.()), activeLocale = normalizeLocale(host.locale?.());
   let composing = false, alive = true, simulated = false, refreshFrame = 0, viewportWidth = 0, scrollPosition = 0, prevLensIndex = -1;
   const rows = new Map(), stops = [];
 
@@ -41,7 +41,7 @@ export function mountSwitcher(container, host, options = {}) {
     const release = releasePreview;
     cycle = undefined; clearTimeout(timer); cancelAnimationFrame(refreshFrame); refreshFrame = 0; releasePreview = () => {};
     resize?.disconnect(); resize = undefined; selectedId = undefined; prevLensIndex = -1;
-    motion?.destroy(); motion = undefined; overlay?.remove(); overlay = undefined; list = undefined; lens = undefined; rows.clear();
+    motion?.destroy(); motion = undefined; overlay?.remove(); overlay = undefined; panel = undefined; list = undefined; lens = undefined; rows.clear();
     try {
       if (!inline && commit && selected !== original && host.exists(selected)) {
         try { host.open(selected); } catch (error) { console.error('[DSH Switcher] Could not open session', error); if (restore) restoreFocus(); }
@@ -60,8 +60,20 @@ export function mountSwitcher(container, host, options = {}) {
     overlay.dataset.project = prefs.project;
     overlay.dataset.signal = prefs.signal;
     overlay.dataset.title = prefs.title;
+    overlay.dataset.scope = prefs.scope;
     if (usesLensMotion(prefs.edition, prefs.motion)) overlay.dataset.lens = 'true';
     else delete overlay.dataset.lens;
+  }
+
+  function applyLocaleAttributes() {
+    if (!overlay) return;
+    const copy = uiCopy(activeLocale);
+    overlay.lang = activeLocale === 'zh' ? 'zh-CN' : 'en';
+    overlay.setAttribute('aria-label', inline ? copy.previewRegionAria : copy.dialogAria);
+    list?.setAttribute('aria-label', copy.listboxAria);
+    for (const node of rows.values()) {
+      if (node.hereBadge) node.hereBadge.textContent = copy.hereBadge;
+    }
   }
 
   function syncLens(immediate = false) {
@@ -108,11 +120,11 @@ export function mountSwitcher(container, host, options = {}) {
       card.id = `${idPrefix}-${index}`; card.setAttribute('role', 'option'); card.setAttribute('aria-selected', 'false');
 
       const project = document.createElement('span'); project.className = 'dsh-switcher-project';
-      let projectName, chip;
+      let projectName, chip, hereBadge = null;
       if (prefs.edition === 'split') {
         projectName = document.createElement('span'); projectName.className = 'dsh-switcher-project-name';
-        const here = document.createElement('span'); here.className = 'dsh-switcher-here'; here.textContent = '当前';
-        project.append(projectName, here);
+        hereBadge = document.createElement('span'); hereBadge.className = 'dsh-switcher-here'; hereBadge.textContent = uiCopy(activeLocale).hereBadge;
+        project.append(projectName, hereBadge);
       } else {
         chip = document.createElement('span'); chip.className = 'dsh-ws-chip';
         projectName = document.createElement('span'); projectName.className = 'dsh-ws-chip-text';
@@ -137,7 +149,7 @@ export function mountSwitcher(container, host, options = {}) {
       }
 
       list.append(card);
-      rows.set(id, { card, project, chip, projectName, title, status, statusLabel, excerpt, icon, motion: { update() {} } });
+      rows.set(id, { card, project, chip, projectName, hereBadge, title, status, statusLabel, excerpt, icon, motion: { update() {} } });
 
       if (!inline) {
         // Pointer movement selects, without a stale hover overriding keyboard navigation.
@@ -174,9 +186,17 @@ export function mountSwitcher(container, host, options = {}) {
     if (!inline && cycle.ids.some(id => !host.exists(id))) { finish(false); return; }
 
     const nextPrefs = normalizePrefs(host.prefs?.());
+    const nextIds = inline ? host.candidates() : cycle.ids;
+    const idsChanged = inline && nextIds.length >= 2 && (nextIds.length !== cycle.ids.length || nextIds.some((id, idx) => id !== cycle.ids[idx]));
     let immediateSelection = false;
+    if (idsChanged) {
+      const keep = nextIds.includes(cycle.selected) ? cycle.selected : nextIds[Math.min(cycle.index, nextIds.length - 1)];
+      cycle = new SwitchCycle(nextIds, host.current(), 1);
+      cycle.select(keep);
+      panel?.style.setProperty('--sw-width', `${nextIds.length * 182 + 32}px`);
+    }
     // The project label changes its box, so its truncation tooltips are measured again.
-    if (nextPrefs.edition !== prefs.edition || nextPrefs.project !== prefs.project) {
+    if (idsChanged || nextPrefs.edition !== prefs.edition || nextPrefs.project !== prefs.project) {
       prefs = nextPrefs; applyPrefsAttributes(); buildCards(); immediateSelection = true;
     } else if (!samePrefs(nextPrefs, prefs)) {
       const motionChanged = nextPrefs.motion !== prefs.motion;
@@ -184,17 +204,24 @@ export function mountSwitcher(container, host, options = {}) {
       if (motionChanged) { motion?.setMode(prefs.motion); immediateSelection = true; }
     }
 
+    const nextLocale = normalizeLocale(host.locale?.());
+    if (nextLocale !== activeLocale) {
+      activeLocale = nextLocale;
+      applyLocaleAttributes();
+    }
+
     const theme = host.theme(), current = host.current(), statusFirst = isStatusFirstEdition(prefs.edition);
+    const copy = uiCopy(activeLocale), sep = copy.listSep;
     const retitled = [], truncChecks = [];
     if (overlay.dataset.theme !== theme) overlay.dataset.theme = theme;
 
     for (const id of cycle.ids) {
       const row = host.row(id), node = rows.get(id), old = node.value || {}, here = id === current;
       const label = statusFirst
-        ? `${row.label}，${row.title}，${row.workspaceName}`
+        ? `${row.label}${sep}${row.title}${sep}${row.workspaceName}`
         : prefs.edition === 'b2'
-          ? `${row.workspaceName}，${row.title}，${row.label}`
-          : `${row.workspaceName}，${row.title}，${row.label}${here ? '，当前会话' : ''}`;
+          ? `${row.workspaceName}${sep}${row.title}${sep}${row.label}`
+          : `${row.workspaceName}${sep}${row.title}${sep}${row.label}${here ? copy.hereSuffix : ''}`;
       const text = row.text || row.placeholder || '', shortLabel = row.shortLabel || row.label;
 
       if (node.label !== label) { node.card.setAttribute('aria-label', label); node.label = label; }
@@ -251,6 +278,7 @@ export function mountSwitcher(container, host, options = {}) {
     }
 
     renderSelection(immediateSelection);
+    if (idsChanged && list) { viewportWidth = list.clientWidth; scrollPosition = list.scrollLeft; scrollSelected(true); }
   }
 
   function scheduleRefresh() {
@@ -290,6 +318,7 @@ export function mountSwitcher(container, host, options = {}) {
     const ids = host.candidates();
     if (ids.length < 2) return;
     prefs = normalizePrefs(host.prefs?.());
+    activeLocale = normalizeLocale(host.locale?.());
     simulated = demo || inline;
     if (!inline) {
       returnFocus = document.activeElement;
@@ -308,14 +337,15 @@ export function mountSwitcher(container, host, options = {}) {
     applyPrefsAttributes();
     if (inline) {
       overlay.dataset.inlinePreview = 'true';
-      overlay.setAttribute('role', 'region'); overlay.setAttribute('aria-label', '切换器实时预览');
+      overlay.setAttribute('role', 'region');
     } else {
       overlay.dataset.shortcutModal = 'dsh-switcher'; overlay.tabIndex = -1;
-      overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', '切换会话');
+      overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true');
     }
-    const panel = document.createElement('div'); panel.className = 'dsh-switcher-panel'; panel.style.setProperty('--sw-width', `${ids.length * 182 + 32}px`);
+    panel = document.createElement('div'); panel.className = 'dsh-switcher-panel'; panel.style.setProperty('--sw-width', `${ids.length * 182 + 32}px`);
     list = document.createElement('div'); list.className = 'dsh-switcher-list'; list.tabIndex = -1; list.style.outline = 'none';
-    list.setAttribute('role', 'listbox'); list.setAttribute('aria-label', '最近会话');
+    list.setAttribute('role', 'listbox');
+    applyLocaleAttributes();
 
     buildCards();
     if (!inline) {

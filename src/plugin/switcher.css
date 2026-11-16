@@ -616,8 +616,8 @@
 .dsh-cfg-btn:disabled { opacity: .45; cursor: default; }
 
 .dsh-cfg-group { display: flex; flex-direction: column; gap: 7px; }
-.dsh-cfg-row { display: flex; flex-wrap: wrap; gap: 16px 24px; }
-.dsh-cfg-row > .dsh-cfg-group { flex: 1 1 220px; min-width: 0; }
+.dsh-cfg-row { display: flex; flex-wrap: wrap; gap: 16px 18px; }
+.dsh-cfg-row > .dsh-cfg-group { flex: 1 1 228px; min-width: 0; }
 .dsh-cfg-label { font-size: 12px; line-height: 16px; font-weight: 500; color: var(--cfg-ink); }
 
 .dsh-cfg-options {

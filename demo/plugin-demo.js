@@ -1,14 +1,17 @@
 import { mountSwitcher } from '../src/plugin/view.js';
 import { mountSettingsPanel } from '../src/plugin/settings.js';
-import { remember, sessionPresentation, createPrefsStore, PREF_KEYS } from '../src/plugin/core.js';
+import { remember, rememberVisit, candidates, sessionPresentation, createPrefsStore, PREF_KEYS, normalizeLocale, uiCopy } from '../src/plugin/core.js';
 
 const params = new URLSearchParams(location.search);
+let locale = params.has('lang') ? normalizeLocale(params.get('lang')) : 'zh';
+document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en';
+
 const data = [
-  { id: 'a', title: '打磨键盘导航体验', text: '想把高频操作连起来，尽量让双手留在键盘上。', kind: 'draft', label: '有草稿', draft: true },
-  { id: 'b', title: '节点稳定性与切换策略', text: '延迟很低但只稳定一小会儿的节点，不要急着切过去。', kind: 'running', label: '运行中' },
-  { id: 'c', title: '左侧栏的焦点与候选状态', text: '上下移动的时候，先不要直接切换会话。', kind: 'idle', label: '会话已就绪' },
-  { id: 'd', title: 'DSH 插件接入方案', text: '把插件的接入边界梳理一下。', kind: 'approval', label: '等待用户确认' },
-  { id: 'e', title: '一念 · 快速记录交互', text: '打开就能写，历史记录也要容易找到。', kind: 'unread', label: '有新结果' },
+  { id: 'a', title: '打磨键盘导航体验', enTitle: 'Polish keyboard navigation', text: '想把高频操作连起来，尽量让双手留在键盘上。', enText: 'Connect frequent actions and keep hands on the keyboard.', kind: 'draft', label: '有草稿', draft: true },
+  { id: 'b', title: '节点稳定性与切换策略', enTitle: 'Node stability and failover policy', text: '延迟很低但只稳定一小会儿的节点，不要急着切过去。', enText: 'Avoid switching to low-latency nodes before stability settles.', kind: 'running', label: '运行中' },
+  { id: 'c', title: '左侧栏的焦点与候选状态', enTitle: 'Sidebar focus and candidate highlight', text: '上下移动的时候，先不要直接切换会话。', enText: 'Preview candidates when moving up and down before committing.', kind: 'idle', label: '会话已就绪' },
+  { id: 'd', title: 'DSH 插件接入方案', enTitle: 'DSH plugin integration plan', text: '把插件的接入边界梳理一下。', enText: 'Clarify the host service boundaries for the plugin.', kind: 'approval', label: '等待用户确认' },
+  { id: 'e', title: '一念 · 快速记录交互', enTitle: 'Trice · Quick capture flow', text: '打开就能写，历史记录也要容易找到。', enText: 'Ready to type on open with fast access to recent notes.', kind: 'unread', label: '有新结果' },
 ];
 const projects = ['dsh-shortcutter', 'proxyAutoSwitch', 'dsh-shortcutter', 'dsh-switcher', 'Trice'];
 // Minutes since each sample was last updated; idle cards show this instead of a constant label.
@@ -74,45 +77,115 @@ const prefsStore = createPrefsStore(typeof localStorage !== 'undefined' ? localS
 const prefOverrides = Object.fromEntries(PREF_KEYS.filter(key => params.has(key)).map(key => [key, params.get(key)]));
 if (Object.keys(prefOverrides).length) prefsStore.update(prefOverrides);
 
-let current = 'a', history = data.map(row => row.id), theme = params.get('theme') === 'dark' ? 'dark' : 'light';
-const listeners = new Set(), themeListeners = new Set();
-const publish = () => {
-  document.body.dataset.theme = theme;
-  for (const fn of [...listeners]) fn();
-  for (const fn of [...themeListeners]) fn();
-};
-prefsStore.subscribe(() => { for (const fn of [...listeners]) fn(); });
+let current = 'a', history = data.map(row => row.id), visitTimes = { a: Date.now() }, theme = params.get('theme') === 'dark' ? 'dark' : 'light';
+const listeners = new Set(), themeListeners = new Set(), localeListeners = new Set();
+
+const statusOfRow = row => ({
+  running: row.kind === 'running',
+  completionUnread: row.kind === 'unread',
+  pendingInteraction: row.kind === 'approval' ? { kind: 'approval' } : undefined,
+});
+const candidatesFor = scope => candidates(
+  { ids: data.map(row => row.id), byId: Object.fromEntries(data.map(row => [row.id, { updatedAt: row.updatedAt }])) },
+  [],
+  history,
+  current,
+  data.filter(row => row.draft).map(row => row.id),
+  {
+    scope,
+    visitedAt: visitTimes,
+    statuses: Object.fromEntries(data.map(row => [row.id, statusOfRow(row)])),
+  },
+);
 
 const host = {
   current: () => current,
-  candidates: () => history,
+  locale: () => locale,
+  candidates: () => candidatesFor(prefsStore.getSnapshot().scope),
   theme: () => theme,
   prefs: () => prefsStore.getSnapshot(),
   exists: id => data.some(row => row.id === id),
   row(id) {
     const row = data.find(row => row.id === id);
-    return { ...row, ...sessionPresentation({ running: row.kind === 'running', completionUnread: row.kind === 'unread',
-      pendingInteraction: row.kind === 'approval' ? { kind: 'approval' } : undefined }, { updatedAt: row.updatedAt }, row.draft) };
+    const en = locale === 'en';
+    const ws = row.workspaceName === '未分组' ? uiCopy(locale).ungrouped : row.workspaceName;
+    return {
+      ...row,
+      title: (en && row.enTitle) ? row.enTitle : row.title,
+      text: (en && row.enText !== undefined && row.text) ? row.enText : row.text,
+      workspaceName: ws,
+      placeholder: uiCopy(locale).inputEmpty,
+      ...sessionPresentation(statusOfRow(row), { updatedAt: row.updatedAt }, row.draft, Date.now(), locale),
+    };
   },
   preview: () => () => {},
   subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
-  open(id) { current = id; history = remember(history, id); document.getElementById('current').textContent = `当前：${host.row(id).title}`; publish(); },
+  open(id) {
+    const at = Date.now();
+    visitTimes = rememberVisit(rememberVisit(visitTimes, current, at), id, at);
+    current = id; history = remember(history, id);
+    publish();
+  },
 };
+
+function syncDemoChrome() {
+  const en = locale === 'en';
+  document.documentElement.lang = en ? 'en' : 'zh-CN';
+  document.title = en ? 'DSH Switcher · Plugin UI & Config Preview' : 'DSH Switcher · 插件界面与配置验证';
+  const titleEl = document.getElementById('demo-title');
+  const descEl = document.getElementById('demo-desc');
+  const currentEl = document.getElementById('current');
+  const draftEl = document.getElementById('demo-draft');
+  if (titleEl) titleEl.textContent = en ? 'dsh-switcher · Plugin Settings Preview' : 'dsh-switcher · 插件详情页配置预览';
+  if (descEl) {
+    descEl.innerHTML = en
+      ? 'Mounts production <code>src/plugin/settings.js</code> and <code>src/plugin/view.js</code> directly with fixture data.'
+      : '以下直接挂载正式 <code>src/plugin/settings.js</code> 与 <code>src/plugin/view.js</code>，数据为验证样例。';
+  }
+  if (currentEl) currentEl.textContent = `${en ? 'Current: ' : '当前：'}${host.row(current).title}`;
+  if (draftEl) {
+    draftEl.setAttribute('aria-label', en ? 'Test draft' : '测试草稿');
+    draftEl.placeholder = en ? 'Type a draft, then test Esc cancel and focus restoration' : '可输入草稿，再测试 Esc 取消与焦点恢复';
+  }
+  const navLabels = en
+    ? { show: 'Open Overlay', 'close-overlay': 'Hide Overlay', lang: '中文', light: 'Light', dark: 'Dark', state: 'Toggle Status', project: 'Rename Project', dispose: 'Dispose UI' }
+    : { show: '体验浮层', 'close-overlay': '收起浮层看配置', lang: 'English', light: '亮色', dark: '暗色', state: '改变运行状态', project: '重命名项目', dispose: '卸载界面' };
+  for (const [id, text] of Object.entries(navLabels)) {
+    const btn = document.getElementById(id);
+    if (btn) btn.textContent = text;
+  }
+}
+
+const publish = () => {
+  document.body.dataset.theme = theme;
+  syncDemoChrome();
+  for (const fn of [...listeners]) fn();
+  for (const fn of [...themeListeners]) fn();
+  for (const fn of [...localeListeners]) fn();
+};
+prefsStore.subscribe(() => { for (const fn of [...listeners]) fn(); });
 
 const controller = mountSwitcher(document.getElementById('mount'), host);
 const settings = mountSettingsPanel(document.getElementById('settings-mount'), {
   prefs: prefsStore,
   getTheme: () => theme,
   subscribeTheme: fn => { themeListeners.add(fn); return () => themeListeners.delete(fn); },
+  getLocale: () => locale,
+  subscribeLocale: fn => { localeListeners.add(fn); return () => localeListeners.delete(fn); },
   canPreview: () => host.candidates().length >= 2,
   onPreview: () => controller.begin(1, true),
 });
 
 document.getElementById('show').onclick = () => controller.begin(1, true);
 document.getElementById('close-overlay').onclick = () => controller.cancel();
+document.getElementById('lang').onclick = () => { locale = locale === 'zh' ? 'en' : 'zh'; publish(); };
 for (const value of ['light', 'dark']) document.getElementById(value).onclick = () => { theme = value; publish(); };
-document.getElementById('state').onclick = () => { data[1].kind = data[1].kind === 'running' ? 'approval' : 'running'; data[1].label = data[1].kind === 'running' ? '运行中' : '等待用户确认'; publish(); };
-document.getElementById('project').onclick = () => { data[1].workspaceName = data[1].workspaceName === '新工作区名称' ? projects[1] : '新工作区名称'; publish(); };
+document.getElementById('state').onclick = () => { data[1].kind = data[1].kind === 'running' ? 'approval' : 'running'; publish(); };
+document.getElementById('project').onclick = () => {
+  const renamed = locale === 'en' ? 'renamed-workspace' : '新工作区名称';
+  data[1].workspaceName = (data[1].workspaceName === '新工作区名称' || data[1].workspaceName === 'renamed-workspace') ? projects[1] : renamed;
+  publish();
+};
 document.getElementById('dispose').onclick = () => { controller.destroy(); settings.destroy(); };
 
 // Native-key semantics can be exercised through an alternate test chord in the browser.
@@ -135,6 +208,12 @@ const comparisons = {
     ['旧默认 · 项目轻胶囊 / 运行中与新结果同蓝 / 标题两行同色', { project: 'chip', signal: 'classic', title: 'even' }],
     ['现默认（推荐）· 项目纯文字 / 只标待处理 / 标题首行为主', { project: 'plain', signal: 'attention', title: 'lead' }],
   ],
+  scope: [
+    ['固定五卡 (classic) · 始终拿旧历史凑满 5 张', { scope: 'classic' }],
+    ['当日宽窗 (day) · 8 小时内活跃 + 未完结状态常驻（3～5 张）', { scope: 'day' }],
+    ['热工作集 (hot，默认) · 2 小时内活跃 + 未完结状态常驻（3～5 张弹性）', { scope: 'hot' }],
+    ['精简三卡 (top3) · 热工作集优先，始终最多 3 张', { scope: 'top3' }],
+  ],
 };
 const comparison = comparisons[params.get('compare')];
 if (comparison) {
@@ -150,9 +229,11 @@ if (comparison) {
     const slot = document.createElement('div');
     rowWrap.append(badge, slot);
     stack.append(rowWrap);
+    const mergedPrefs = () => ({ ...prefsStore.getSnapshot(), edition: params.get('edition') || 'kibutsu', ...override });
     const subHost = {
       ...host,
-      prefs: () => ({ ...prefsStore.getSnapshot(), edition: params.get('edition') || 'kibutsu', ...override }),
+      candidates: () => candidatesFor(mergedPrefs().scope),
+      prefs: mergedPrefs,
     };
     const sub = mountSwitcher(slot, subHost, { inline: true });
     sub.begin(1, true);

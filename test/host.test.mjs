@@ -169,3 +169,246 @@ test('host scrubs stored subagents, ignores subagent mounts, and anchors on the 
     delete globalThis.sessionStorage;
   }
 });
+
+test('host tracks visit departure/arrival timestamps and respects live working-set scope switches', () => {
+  const storage = new Map();
+  globalThis.sessionStorage = { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) };
+  try {
+    let now = Date.parse('2026-11-14T10:00:00.000Z');
+    let scope = 'hot';
+    const mins = m => now - m * 60_000;
+    const list = store({
+      ids: ['a', 'b', 'oldRef', 'bgTask', 'stale'],
+      byId: {
+        a: { displayTitle: '主线 A', updatedAt: mins(5) },
+        b: { displayTitle: '主线 B', updatedAt: mins(15) },
+        oldRef: { displayTitle: '五天前的参考会话', updatedAt: mins(5 * 1440) },
+        bgTask: { displayTitle: '昨日长任务', updatedAt: mins(1500) },
+        stale: { displayTitle: '昨日闲置', updatedAt: mins(1600) },
+      },
+    });
+    const mounted = store('a');
+    const status = store(new Map());
+    const ctx = {
+      sessions: {
+        list,
+        binding: () => undefined,
+        retain: id => ({
+          binding: { sessionId: id, ctx: {}, session: Object.assign(store({ openState: 'open' }), { eventSource: store({ entries: [] }) }) },
+          ready: Promise.resolve(),
+          release() {},
+        }),
+      },
+      sidebarRight: { mounted },
+      uiSession: { sessionStatus: status },
+      workspaces: { list: store({ archivedSessionIds: [], items: [] }) },
+      conversation: { input: { for: () => ({ state: store({ draft: '' }) }) } },
+      theme: { getTheme: () => ({ active: { colorScheme: 'dark' } }) },
+      uiWorkspace: { openSession() {} },
+      on: () => () => {},
+    };
+
+    const host = createHostAdapter(ctx, { getPrefs: () => ({ scope }), now: () => now });
+    // Initially `a` and `b` are warm; 3-card floor tops up with `bgTask` without padding out to 5.
+    assert.deepEqual(host.candidates(), ['a', 'b', 'bgTask']);
+
+    // User visits `b`, then opens `oldRef` (5 days old, read-only) for 90m, then switches back to `a`.
+    mounted.set('b');
+    mounted.set('oldRef');
+    now += 90 * 60_000; // 11:30 (+90m: `a`, `b`, `oldRef` are all within 2h!)
+    mounted.set('a');
+    assert.deepEqual(host.candidates(), ['a', 'oldRef', 'b']);
+
+    // A background task from yesterday enters `approval` — expands `hot` to 4 cards!
+    status.set(new Map([['bgTask', { pendingInteraction: { kind: 'approval' } }]]));
+    assert.deepEqual(host.candidates(), ['a', 'oldRef', 'b', 'bgTask']);
+
+    // Switching scope to `classic` restores 5-card backfill; `top3` caps at 3.
+    scope = 'classic';
+    assert.deepEqual(host.candidates(), ['a', 'oldRef', 'b', 'bgTask', 'stale']);
+    scope = 'top3';
+    assert.deepEqual(host.candidates(), ['a', 'oldRef', 'b']);
+
+    // 3 hours later with `bgTask` resolved, all sessions are cold -> floor of 3 keeps `a`, `oldRef`, `b`.
+    status.set(new Map());
+    now += 180 * 60_000;
+    scope = 'hot';
+    assert.deepEqual(host.candidates(), ['a', 'oldRef', 'b']);
+
+    host.destroy();
+  } finally {
+    delete globalThis.sessionStorage;
+  }
+});
+
+test('host reliably marks newly completed tasks as unread across non-session panels, subagents, and scheduled races', () => {
+  const storage = new Map();
+  globalThis.sessionStorage = { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) };
+  try {
+    let now = Date.parse('2026-11-16T10:00:00.000Z');
+    const mins = m => new Date(now - m * 60_000).toISOString();
+    const list = store({
+      phase: 'ready',
+      ids: ['a', 'b', 'c'],
+      byId: {
+        a: { displayTitle: '主会话 A', updatedAt: mins(5), running: true },
+        b: { displayTitle: '父会话 B', updatedAt: mins(240), running: false },
+        c: { displayTitle: '常规会话 C', updatedAt: mins(20), running: false },
+      },
+      projectionsBySession: {
+        b: { values: { subagentCatalog: [{ id: 'sub-b1' }] } },
+      },
+    });
+    const mounted = store('a');
+    const status = store(new Map([['a', { running: true, completionUnread: false }]]));
+    const ctx = {
+      sessions: {
+        list,
+        binding: () => undefined,
+        subagentAddress: id => (id === 'sub-b1' ? { parentSessionId: 'b' } : undefined),
+        retain: id => ({
+          binding: { sessionId: id, ctx: {}, session: Object.assign(store({ openState: 'open' }), { eventSource: store({ entries: [] }) }) },
+          ready: Promise.resolve(),
+          release() {},
+        }),
+      },
+      sidebarRight: { mounted },
+      uiSession: { sessionStatus: status },
+      workspaces: { list: store({ archivedSessionIds: [], items: [] }) },
+      conversation: { input: { for: () => ({ state: store({ draft: '' }) }) } },
+      theme: { getTheme: () => ({ active: { colorScheme: 'dark' } }) },
+      uiWorkspace: { openSession() {} },
+      on: () => () => {},
+    };
+
+    const host = createHostAdapter(ctx, { now: () => now });
+    assert.equal(host.row('a').kind, 'running');
+
+    // Case 1: User switches to Tasks/Plugins/Settings (`mounted` is `undefined`), while DSH keeps
+    // `retainedBy.mainView > 0` on `a` so `UiSession` sets `completionUnread: false` when `a` finishes!
+    mounted.set(undefined);
+    now += 60_000;
+    list.set({ ...list.getSnapshot(), byId: { ...list.getSnapshot().byId, a: { displayTitle: '主会话 A', updatedAt: mins(6), running: false } } });
+    status.set(new Map([['a', { running: false, completionUnread: false }]]));
+    assert.equal(host.row('a').kind, 'unread');
+    assert.equal(host.row('a').shortLabel, '新结果');
+
+    // Opening `a` clears unread and uses `completedAt` so relativeTime is `刚刚` instead of stale age.
+    mounted.set('a');
+    assert.equal(host.row('a').kind, 'idle');
+    assert.equal(host.row('a').shortLabel, '刚刚');
+
+    // Case 2: Subagent `sub-b1` of 4h-old parent `b` runs and completes while user is on `a`.
+    status.set(new Map([['sub-b1', { running: true, completionUnread: false }]]));
+    assert.equal(host.row('b').kind, 'running');
+    assert.equal(host.candidates().includes('b'), true);
+
+    now += 30_000;
+    status.set(new Map([['sub-b1', { running: false, completionUnread: true }]]));
+    assert.equal(host.row('b').kind, 'unread');
+    assert.equal(host.row('b').shortLabel, '新结果');
+
+    // User opens parent `b` (without opening `sub-b1` directly, so `UiSession` keeps `sub-b1` completionUnread: true).
+    mounted.set('b');
+    assert.equal(host.row('b').kind, 'idle');
+    mounted.set('a');
+    assert.equal(host.row('b').kind, 'idle', 'parent must not re-latch onto sticky subagent completionUnread after parent was viewed');
+
+    // Case 3: Scheduled task `sched-1` emits status `true -> false` BEFORE `sessions.list` flushes `sched-1` into `byId`,
+    // and `UiSession.reconcileStatus` wiped `completionUnread` during the gap.
+    status.set(new Map([['sched-1', { running: true, completionUnread: false }]]));
+    status.set(new Map()); // Simulate UiSession.reconcileStatus deleting `sched-1` while not yet in `byId`
+    now += 15_000;
+    status.set(new Map([['sched-1', { running: false, completionUnread: false }]]));
+    list.set({
+      ...list.getSnapshot(),
+      ids: ['sched-1', 'a', 'b', 'c'],
+      byId: {
+        ...list.getSnapshot().byId,
+        'sched-1': { displayTitle: '定时巡检报告', blank: false, running: false, updatedAt: new Date(now).toISOString() },
+      },
+    });
+    assert.equal(host.row('sched-1').kind, 'unread');
+    assert.equal(host.row('sched-1').shortLabel, '新结果');
+
+    // Case 4: Instant post-baseline task session `sched-instant` vs blank `+ 新会话` vs imported old session.
+    now += 10_000;
+    list.set({
+      ...list.getSnapshot(),
+      ids: ['sched-instant', 'blank-new', 'imported-old', ...list.getSnapshot().ids],
+      byId: {
+        ...list.getSnapshot().byId,
+        'sched-instant': { displayTitle: '秒级后台任务', blank: false, running: false, updatedAt: new Date(now).toISOString() },
+        'blank-new': { displayTitle: '', blank: true, running: false, updatedAt: new Date(now).toISOString() },
+        'imported-old': { displayTitle: '三天前导入记录', blank: false, running: false, updatedAt: mins(3 * 1440) },
+      },
+    });
+    assert.equal(host.row('sched-instant').kind, 'unread');
+    assert.equal(host.row('blank-new').kind, 'idle');
+    assert.equal(host.row('imported-old').kind, 'idle');
+
+    host.destroy();
+  } finally {
+    delete globalThis.sessionStorage;
+  }
+});
+
+test('host follows live ctx.locale / locale/change updates across statuses, fallbacks, and attachment excerpts', () => {
+  const localeStore = store({ active: 'zh', revision: 1 });
+  const bus = new Map();
+  const imgEntry = { event: { type: 'user/message', data: { role: 'user', source: { kind: 'user' }, content: [{ type: 'image', source: 'img1' }] } } };
+  const sessionA = Object.assign(store({ openState: 'open' }), { eventSource: store({ entries: [imgEntry] }) });
+  const sessionB = Object.assign(store({ openState: 'open' }), { eventSource: store({ entries: [] }) });
+  const list = store({
+    phase: 'ready',
+    ids: ['a', 'b'],
+    byId: {
+      a: { title: '', updatedAt: Date.now() },
+      b: { displayTitle: 'Task B', updatedAt: Date.now() },
+    },
+  });
+  const status = store(new Map([['b', { running: false, completionUnread: true }]]));
+  const ctx = {
+    get: name => (name === 'locale' ? localeStore : undefined),
+    sessions: {
+      list,
+      binding: id => (id === 'a' ? { sessionId: 'a', ctx: {}, session: sessionA } : undefined),
+      retain: id => ({ binding: { sessionId: id, ctx: {}, session: sessionB }, ready: Promise.resolve(), release() {} }),
+    },
+    sidebarRight: { mounted: store('a') },
+    uiSession: { sessionStatus: status },
+    workspaces: { list: store({ archivedSessionIds: [], items: [] }) },
+    conversation: { input: { for: () => ({ state: store({ draft: '' }) }) } },
+    theme: { getTheme: () => ({ active: { colorScheme: 'dark' } }) },
+    uiWorkspace: { openSession() {} },
+    on(event, fn) {
+      if (!bus.has(event)) bus.set(event, new Set());
+      bus.get(event).add(fn);
+      return () => bus.get(event).delete(fn);
+    },
+  };
+
+  const host = createHostAdapter(ctx);
+  const stopPreview = host.preview(['b']);
+  assert.equal(host.locale(), 'zh');
+  assert.equal(host.row('a').title, '新会话');
+  assert.equal(host.row('a').workspaceName, '未分组');
+  assert.equal(host.row('a').text, '已发送附件');
+  assert.equal(host.row('b').placeholder, '还没有输入');
+  assert.equal(host.row('b').shortLabel, '新结果');
+
+  let updates = 0;
+  host.subscribe(() => updates++);
+  localeStore.set({ active: 'en', revision: 2 });
+  assert.ok(updates >= 1);
+  assert.equal(host.locale(), 'en');
+  assert.equal(host.row('a').title, 'New Session');
+  assert.equal(host.row('a').workspaceName, 'Ungrouped');
+  assert.equal(host.row('a').text, 'Sent attachment');
+  assert.equal(host.row('b').placeholder, 'No input yet');
+  assert.equal(host.row('b').shortLabel, 'New result');
+  assert.equal(host.row('b').label, 'New result available');
+
+  stopPreview();
+  host.destroy();
+});

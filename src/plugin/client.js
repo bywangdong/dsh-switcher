@@ -15,6 +15,19 @@ window.__ModuleLoader__.load({
       const prefsStore = createPrefsStore(typeof localStorage !== 'undefined' ? localStorage : undefined);
       let styleElement = null, styleUsers = 0, liveHost = null, liveController = null;
 
+      const localeService = () => (typeof ctx.get === 'function' ? ctx.get('locale') : ctx.locale);
+      const getHostLocale = () => {
+        const active = localeService()?.getSnapshot?.()?.active;
+        return active ? normalizeLocale(active) : detectEnvironmentLocale();
+      };
+      const subscribeHostLocale = fn => {
+        const stops = [];
+        const svc = localeService();
+        if (typeof svc?.subscribe === 'function') stops.push(svc.subscribe(fn));
+        if (typeof ctx.on === 'function') stops.push(ctx.on('locale/change', fn));
+        return () => { stops.forEach(stop => stop?.()); };
+      };
+
       function retainStyle() {
         if (++styleUsers === 1) {
           styleElement = document.createElement('style');
@@ -34,7 +47,10 @@ window.__ModuleLoader__.load({
         const anchor = React.useRef(null);
         React.useEffect(() => {
           const releaseStyle = retainStyle();
-          const host = createHostAdapter(ctx);
+          const host = createHostAdapter(ctx, {
+            getPrefs: () => prefsStore.getSnapshot(),
+            getLocale: getHostLocale,
+          });
           const prefsListeners = new Set();
           const stopPrefs = prefsStore.subscribe(() => { for (const fn of [...prefsListeners]) fn(); });
           const wrappedHost = {
@@ -56,8 +72,13 @@ window.__ModuleLoader__.load({
         return createPortal(React.createElement('div', { ref: anchor, 'data-dsh-switcher-root': '' }), document.body);
       }
 
-      function ConfigPanel(props) {
-        if (props?.view === 'summary') return '卡片版式与状态动效设置';
+      function ConfigSummary() {
+        const [loc, setLoc] = React.useState(getHostLocale);
+        React.useEffect(() => subscribeHostLocale(() => setLoc(getHostLocale())), []);
+        return uiCopy(loc).configSummary;
+      }
+
+      function ConfigPage() {
         const anchor = React.useRef(null);
         React.useEffect(() => {
           const releaseStyle = retainStyle();
@@ -65,6 +86,8 @@ window.__ModuleLoader__.load({
             prefs: prefsStore,
             getTheme: () => ctx.theme.getTheme().active.colorScheme === 'dark' ? 'dark' : 'light',
             subscribeTheme: fn => ctx.on('theme/change', fn),
+            getLocale: getHostLocale,
+            subscribeLocale: subscribeHostLocale,
             canPreview: () => (liveHost?.candidates().length || 0) >= 2,
             onPreview: () => liveController?.begin(1, true),
           });
@@ -72,6 +95,12 @@ window.__ModuleLoader__.load({
           return () => { stopSessions(); settings.destroy(); releaseStyle(); };
         }, []);
         return React.createElement('div', { ref: anchor, 'data-dsh-switcher-settings-root': '' });
+      }
+
+      function ConfigPanel(props) {
+        return props?.view === 'summary'
+          ? React.createElement(ConfigSummary)
+          : React.createElement(ConfigPage);
       }
 
       ctx.effect(() => {
