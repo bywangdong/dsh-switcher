@@ -60,7 +60,7 @@ npm run build
 npm test
 npm run check
 npm run pack:local
-dsh plugin --profile desktop add /absolute/path/to/dsh-switcher/dist/dsh-switcher-0.1.13.tgz --offline --ignore-scripts
+dsh plugin --profile desktop add /absolute/path/to/dsh-switcher/dist/dsh-switcher-0.1.14-dev.5.tgz --offline --ignore-scripts
 ```
 
 安装包只有客户端代码、空的宿主入口、插件补丁、包信息和说明。使用官方插件安装路径，不修改 DSH 应用包。针对 DSH **0.2.1-rc.2** 的公开客户端服务开发，目前本机验证平台为 macOS。
