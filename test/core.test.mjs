@@ -222,14 +222,14 @@ test('an idle row shows when the session was last updated and classifies 4 recen
   assert.equal(relativeTime(new Date(2025, 11, 31, 12, 0).getTime(), now), '2025年12月31日');
   assert.equal(relativeTime(undefined, now), ''); assert.equal(relativeTime('无效', now), '');
 
-  assert.equal(idleRecency(ago(4), now), 'fresh');
-  assert.equal(idleRecency(ago(45), now), 'warm');
+  assert.equal(idleRecency(ago(21), now), 'fresh');
+  assert.equal(idleRecency(ago(95), now), 'warm');
   assert.equal(idleRecency(new Date(2026, 10, 12, 10, 0).getTime(), now), 'today');
   assert.equal(idleRecency(new Date(2026, 10, 11, 23, 50).getTime(), now), 'cold');
   assert.equal(idleRecency('broken', now), 'today');
 
   const idle = sessionPresentation({}, { updatedAt: new Date(ago(125)).toISOString() }, false, now);
-  assert.equal(idle.kind, 'idle'); assert.equal(idle.recency, 'today');
+  assert.equal(idle.kind, 'idle'); assert.equal(idle.recency, 'warm');
   assert.equal(idle.shortLabel, '2 小时前'); assert.equal(idle.label, '会话已就绪，2 小时前更新');
   assert.equal(sessionPresentation({}, { updatedAt: ago(5) }, false, now).recency, 'fresh');
   assert.equal(sessionPresentation({}, { updatedAt: 'broken' }, false, now).shortLabel, '已就绪');
@@ -361,7 +361,7 @@ test('bilingual zh/en localization covers relative time, statuses, plan-review, 
     kind: 'unread', label: 'New result available', shortLabel: 'New result', draft: false,
   });
   assert.deepEqual(sessionPresentation({}, { updatedAt: ago(125) }, false, now, 'en'), {
-    kind: 'idle', recency: 'today', label: 'Ready, updated 2h ago', shortLabel: '2h ago', draft: false,
+    kind: 'idle', recency: 'warm', label: 'Ready, updated 2h ago', shortLabel: '2h ago', draft: false,
   });
   assert.equal(sessionPresentation({}, {}, false, now, 'en').shortLabel, 'Ready');
 

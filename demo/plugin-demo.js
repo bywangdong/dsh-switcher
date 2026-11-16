@@ -23,12 +23,29 @@ if (params.get('scene') === 'quiet') {
     '统一多个工作区的会话焦点与键盘导航体验并补充回归验证记录'];
   const enTitles = ['Prepare weekly release checklist', 'Keybinding choices for navigation mode', 'Audit backup points in install & rollback', 'Verify horizontal scroll in narrow windows',
     'Unify multi-workspace focus and keyboard navigation regression suite'];
-  const quietAges = [4, 48, 390, 26 * 60, 9 * 24 * 60];
+  const quietAges = [21, 95, 390, 26 * 60, 9 * 24 * 60];
   data.forEach((row, i) => Object.assign(row, {
     kind: 'idle', label: '会话已就绪', draft: false, title: titles[i], enTitle: enTitles[i],
     workspaceName: i === 2 ? 'dsh-shortcutter' : 'Agent',
     updatedAt: new Date(Date.now() - quietAges[i] * 60000).toISOString(),
   }));
+}
+if (params.get('scene') === 'recency') {
+  // Reproduces a mixed MRU strip where one 21m-old active session sits alongside older visited cards.
+  const recencyRows = [
+    ['香港最新款的 ipad mini 价格和渠道对比', 'Latest iPad mini HK pricing and channels', 'Agent', 21],
+    ['讨论导航态快捷键选择', 'Navigation mode shortcut choices', 'dsh-shortcutter', 8 * 24 * 60],
+    ['帮我搜一下 抓特务 夸克网盘', 'Search resource links and verify availability', 'Agent', 2 * 24 * 60],
+    ['升级到 v0.2.2-alpha.3', 'Upgrade to v0.2.2-alpha.3', 'Agent', 12 * 60],
+    ['快帮我忙，我用土区订阅了 ChatGPT', 'Help troubleshoot regional subscription billing', 'Agent', 26 * 60],
+  ];
+  data.forEach((row, i) => {
+    const [title, enTitle, workspaceName, mins] = recencyRows[i];
+    Object.assign(row, {
+      kind: 'idle', draft: false, title, enTitle, workspaceName,
+      updatedAt: new Date(Date.now() - mins * 60000).toISOString(),
+    });
+  });
 }
 if (params.get('scene') === 'screenshot') {
   const shot = [

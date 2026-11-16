@@ -353,8 +353,8 @@ export function idleRecency(value, now = Date.now()) {
   const time = sessionTimestamp(value);
   if (!time) return 'today';
   const minutes = Math.floor((now - time) / 60000);
-  if (minutes < 15) return 'fresh';
-  if (minutes < 120) return 'warm';
+  if (minutes < 60) return 'fresh';
+  if (minutes < 180) return 'warm';
   const { days } = calendarDayDiff(time, now);
   if (days <= 0 || minutes < 360) return 'today';
   return 'cold';

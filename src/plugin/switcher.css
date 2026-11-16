@@ -16,11 +16,11 @@
   --sw-selected: rgb(33 41 53 / .095); --sw-selected-edge: rgb(33 41 53 / .2);
   --sw-selected-cap: rgb(33 41 53 / .04);
   --sw-project: #565d67; --sw-note: #626975;
-  --sw-blue: #42658f; --sw-amber: #80612f; --sw-running: #177950; --sw-opaque: #f1f3f5;
-  --sw-fresh-ink: #12161d; --sw-fresh-icon: #242a34;
-  --sw-warm-ink: #2f3540; --sw-warm-icon: #48505c;
-  --sw-today-ink: #5b626e; --sw-today-icon: #6d7481;
-  --sw-cold-ink: #868d99; --sw-cold-icon: #8d94a0; --sw-cold-sel-ink: #666d78;
+  --sw-blue: #2c52cf; --sw-amber: #8f5608; --sw-running: #16794b; --sw-opaque: #f1f3f5;
+  --sw-fresh-ink: #0d758f; --sw-fresh-icon: #0d758f;
+  --sw-warm-ink: #336675; --sw-warm-icon: #3c6e7d;
+  --sw-today-ink: #5e6673; --sw-today-icon: #6f7784;
+  --sw-cold-ink: #8c939f; --sw-cold-icon: #939aa6; --sw-cold-sel-ink: #666d78;
   --sw-shadow: 0 24px 60px rgb(28 32 40 / .16), 0 6px 16px rgb(28 32 40 / .06), 0 0 0 .5px rgb(28 32 40 / .1);
   position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center;
   color: var(--sw-ink); font-family: var(--dsw-font-family, -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif);
@@ -43,11 +43,11 @@
   --sw-selected: rgb(255 255 255 / .11); --sw-selected-edge: rgb(255 255 255 / .16);
   --sw-selected-cap: rgb(255 255 255 / .035);
   --sw-project: #c2c6ce; --sw-note: #a9afb9;
-  --sw-blue: #9db7d8; --sw-amber: #d3b684; --sw-running: #5ec99b; --sw-opaque: #212225;
-  --sw-fresh-ink: #f3f5f9; --sw-fresh-icon: #e2e7f0;
-  --sw-warm-ink: #cfd5df; --sw-warm-icon: #b2bac7;
-  --sw-today-ink: #9aa1ae; --sw-today-icon: #89919e;
-  --sw-cold-ink: #757c89; --sw-cold-icon: #737a87; --sw-cold-sel-ink: #9198a5;
+  --sw-blue: #86a6ff; --sw-amber: #e8b262; --sw-running: #57c98f; --sw-opaque: #212225;
+  --sw-fresh-ink: #56cbe3; --sw-fresh-icon: #56cbe3;
+  --sw-warm-ink: #9bc2d1; --sw-warm-icon: #8bb3c2;
+  --sw-today-ink: #929aa7; --sw-today-icon: #838b98;
+  --sw-cold-ink: #626976; --sw-cold-icon: #5f6673; --sw-cold-sel-ink: #8b929f;
   --sw-shadow: 0 28px 70px rgb(0 0 0 / .45), 0 6px 18px rgb(0 0 0 / .22), 0 0 0 .5px rgb(0 0 0 / .6);
 }
 
@@ -122,7 +122,8 @@
 .dsh-switcher-icon[data-status=running], .dsh-switcher-icon[data-status=unread] { color: var(--sw-blue); }
 .dsh-switcher-status[data-status=approval], .dsh-switcher-icon[data-status=approval] { color: var(--sw-amber); }
 
-/* 4-tier idle recency hierarchy (`fresh` <15m · `warm` <2h · `today` · `cold` >=1d) */
+/* 4-tier idle recency color hierarchy on the status row ONLY (`fresh` <60m · `warm` <3h · `today` · `cold` >=1d):
+   card surfaces, titles, and project labels stay 100% uniform across all unselected cards. */
 .dsh-switcher .dsh-switcher-status[data-status=idle][data-recency=fresh] { color: var(--sw-fresh-ink); }
 .dsh-switcher .dsh-switcher-icon[data-status=idle][data-recency=fresh] { color: var(--sw-fresh-icon); }
 .dsh-switcher .dsh-switcher-status[data-status=idle][data-recency=fresh] .dsh-switcher-status-label { font-weight: 550; }
@@ -178,8 +179,8 @@
   --sw-icon-idle: #626771;
   --sw-icon-sel-idle: #4a4f58;
   --sw-draft-ink: #343942;
-  --sw-blue: #2d58cf;
-  --sw-amber: #87550a;
+  --sw-blue: #2c52cf;
+  --sw-amber: #8f5608;
   --sw-pill-bg: rgb(20 24 32 / .058);
   --sw-pill-edge: rgb(20 24 32 / .098);
   --sw-pill-ink: #434851;
@@ -207,8 +208,8 @@
   --sw-icon-idle: #9197a1;
   --sw-icon-sel-idle: #b1b7c1;
   --sw-draft-ink: #d2d6dd;
-  --sw-blue: #84aeff;
-  --sw-amber: #e3b975;
+  --sw-blue: #86a6ff;
+  --sw-amber: #e8b262;
   --sw-pill-bg: rgb(255 255 255 / .058);
   --sw-pill-edge: rgb(255 255 255 / .095);
   --sw-pill-ink: #b6bcc6;
@@ -243,10 +244,10 @@
 .dsh-switcher:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun]) .dsh-switcher-icon {
   color: var(--sw-icon-idle); transition: color .22s ease-out;
 }
-.dsh-switcher:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun]) .dsh-switcher-card[aria-selected=true] .dsh-switcher-status[data-status=idle]:not([data-recency=fresh]):not([data-recency=cold]) {
+.dsh-switcher:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun]) .dsh-switcher-card[aria-selected=true] .dsh-switcher-status[data-status=idle]:not([data-recency=fresh]):not([data-recency=warm]):not([data-recency=cold]) {
   color: var(--sw-status-sel-idle);
 }
-.dsh-switcher:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun]) .dsh-switcher-card[aria-selected=true] .dsh-switcher-icon[data-status=idle]:not([data-recency=fresh]):not([data-recency=cold]) {
+.dsh-switcher:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun]) .dsh-switcher-card[aria-selected=true] .dsh-switcher-icon[data-status=idle]:not([data-recency=fresh]):not([data-recency=warm]):not([data-recency=cold]) {
   color: var(--sw-icon-sel-idle);
 }
 .dsh-switcher:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun]) .dsh-switcher-status[data-status=draft],

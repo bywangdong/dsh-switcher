@@ -385,8 +385,8 @@ test('mountSwitcher renders distinct data-recency attributes and 5-bar SVG meter
   const prefs = createPrefsStore({ getItem: () => null, setItem() {} });
   const now = new Date(2026, 10, 16, 21, 0, 0).getTime();
   const ages = {
-    sFresh: now - 4 * 60_000,
-    sWarm: now - 45 * 60_000,
+    sFresh: now - 21 * 60_000,
+    sWarm: now - 95 * 60_000,
     sToday: new Date(2026, 10, 16, 10, 0, 0).getTime(),
     sCold: new Date(2026, 10, 8, 12, 0, 0).getTime(),
   };
@@ -420,7 +420,7 @@ test('mountSwitcher renders distinct data-recency attributes and 5-bar SVG meter
   assert.deepEqual(statuses.map(s => s.dataset.recency), ['fresh', 'warm', 'today', 'cold']);
 
   const labels = env.findAll(container, n => n.className === 'dsh-switcher-status-label').map(l => l.textContent);
-  assert.deepEqual(labels, ['4m ago', '45m ago', 'Today 10:00', 'Nov 8']);
+  assert.deepEqual(labels, ['21m ago', '1h ago', 'Today 10:00', 'Nov 8']);
 
   // Verify the 5-slot SVG meter draws different numbers of upright vertical bars (`5 -> 3 -> 1 -> 0`).
   const icons = env.findAll(container, n => n.className === 'dsh-switcher-icon');
