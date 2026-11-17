@@ -200,71 +200,141 @@ export function latestActivityTimestamp(entries) {
   return latest;
 }
 
-export function isSubagentSession(snapshot, id) {
-  const summary = snapshot?.byId?.[id];
-  if (!summary) return false;
-  if (summary.origin === 'subagent' || (typeof summary.delegationDepth === 'number' && summary.delegationDepth > 0)) return true;
-  if (Array.isArray(snapshot?.ids) && !snapshot.ids.includes(id)) return true;
-  const projections = snapshot?.projectionsBySession;
+const SESSION_INDEX_CACHE = new WeakMap();
+const EMPTY_SESSION_INDEX = Object.freeze({
+  topSet: null,
+  catalogParent: new Map(),
+  subagents: new Set(),
+  rootOf: new Map(),
+  childrenByRoot: new Map(),
+});
+
+// Build a single-pass O(N) parent/child & subagent index once per immutable list snapshot.
+export function getSessionIndex(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return EMPTY_SESSION_INDEX;
+  const cached = SESSION_INDEX_CACHE.get(snapshot);
+  if (cached) return cached;
+
+  const byId = snapshot.byId && typeof snapshot.byId === 'object' ? snapshot.byId : null;
+  const topSet = Array.isArray(snapshot.ids) ? new Set(snapshot.ids) : null;
+  const catalogParent = new Map();
+  const projections = snapshot.projectionsBySession;
   if (projections && typeof projections === 'object') {
-    for (const entry of Object.values(projections)) {
-      const catalog = entry?.values?.subagentCatalog;
-      if (Array.isArray(catalog) && catalog.some(child => child?.id === id)) return true;
-    }
-  }
-  return false;
-}
-
-function findCatalogParent(snapshot, id) {
-  const projections = snapshot?.projectionsBySession;
-  if (!projections || typeof projections !== 'object') return undefined;
-  for (const [parentId, entry] of Object.entries(projections)) {
-    const catalog = entry?.values?.subagentCatalog;
-    if (Array.isArray(catalog) && catalog.some(child => child?.id === id)) return parentId;
-  }
-  return undefined;
-}
-
-export function resolveSessionTarget(snapshot, id) {
-  let cursor = id;
-  const seen = new Set();
-  while (cursor && !seen.has(cursor)) {
-    seen.add(cursor);
-    const summary = snapshot?.byId?.[cursor];
-    if (!summary) {
-      cursor = findCatalogParent(snapshot, cursor);
-      continue;
-    }
-    if (!isSubagentSession(snapshot, cursor)) return cursor;
-    cursor = summary.parentId || summary.parentSessionId || summary.parentSession || findCatalogParent(snapshot, cursor);
-  }
-  return undefined;
-}
-
-export function aggregateSessionStatus(snapshot, statuses, id, extra = {}) {
-  const statusOf = key => statuses instanceof Map ? statuses.get(key) : statuses?.[key];
-  const own = statusOf(id);
-  const summary = snapshot?.byId?.[id];
-  const childIds = new Set();
-  const catalog = snapshot?.projectionsBySession?.[id]?.values?.subagentCatalog;
-  if (Array.isArray(catalog)) {
-    for (const child of catalog) { if (child?.id) childIds.add(child.id); }
-  }
-  if (snapshot?.byId) {
-    for (const candidateId of Object.keys(snapshot.byId)) {
-      if (candidateId !== id && isSubagentSession(snapshot, candidateId) && resolveSessionTarget(snapshot, candidateId) === id) {
-        childIds.add(candidateId);
+    for (const parentId in projections) {
+      if (!Object.prototype.hasOwnProperty.call(projections, parentId)) continue;
+      const catalog = projections[parentId]?.values?.subagentCatalog;
+      if (Array.isArray(catalog)) {
+        for (let i = 0; i < catalog.length; i++) {
+          const childId = catalog[i]?.id;
+          if (childId) catalogParent.set(childId, parentId);
+        }
       }
     }
   }
+
+  const subagents = new Set();
+  if (byId) {
+    for (const id in byId) {
+      if (!Object.prototype.hasOwnProperty.call(byId, id)) continue;
+      const summary = byId[id];
+      if (!summary) continue;
+      if (
+        summary.origin === 'subagent' ||
+        (typeof summary.delegationDepth === 'number' && summary.delegationDepth > 0) ||
+        (topSet !== null && !topSet.has(id)) ||
+        catalogParent.has(id)
+      ) {
+        subagents.add(id);
+      }
+    }
+  }
+
+  const rootOf = new Map();
+  const visiting = new Set();
+  const resolveRoot = id => {
+    if (!id) return undefined;
+    if (rootOf.has(id)) return rootOf.get(id);
+    if (visiting.has(id)) return undefined;
+    const summary = byId ? byId[id] : undefined;
+    if (!summary) {
+      const parent = catalogParent.get(id);
+      if (!parent) { rootOf.set(id, undefined); return undefined; }
+      visiting.add(id);
+      const root = resolveRoot(parent);
+      visiting.delete(id);
+      rootOf.set(id, root);
+      return root;
+    }
+    if (!subagents.has(id)) {
+      rootOf.set(id, id);
+      return id;
+    }
+    const nextParent = summary.parentId || summary.parentSessionId || summary.parentSession || catalogParent.get(id);
+    if (!nextParent) { rootOf.set(id, undefined); return undefined; }
+    visiting.add(id);
+    const root = resolveRoot(nextParent);
+    visiting.delete(id);
+    rootOf.set(id, root);
+    return root;
+  };
+
+  const childrenByRoot = new Map();
+  let childSeenByRoot = null;
+  const linkChild = (root, childId) => {
+    if (!root || root === childId) return;
+    if (!childSeenByRoot) childSeenByRoot = new Map();
+    let list = childrenByRoot.get(root);
+    let seen = childSeenByRoot.get(root);
+    if (!list) {
+      list = [];
+      seen = new Set();
+      childrenByRoot.set(root, list);
+      childSeenByRoot.set(root, seen);
+    }
+    if (!seen.has(childId)) {
+      seen.add(childId);
+      list.push(childId);
+    }
+  };
+
+  for (const childId of subagents) linkChild(resolveRoot(childId), childId);
+  for (const childId of catalogParent.keys()) linkChild(resolveRoot(childId), childId);
+
+  const index = { topSet, catalogParent, subagents, rootOf, childrenByRoot };
+  SESSION_INDEX_CACHE.set(snapshot, index);
+  return index;
+}
+
+export function isSubagentSession(snapshot, id) {
+  if (!id || !snapshot?.byId?.[id]) return false;
+  return getSessionIndex(snapshot).subagents.has(id);
+}
+
+export function resolveSessionTarget(snapshot, id) {
+  if (!id || !snapshot) return undefined;
+  const index = getSessionIndex(snapshot);
+  if (index.rootOf.has(id)) return index.rootOf.get(id);
+  const summary = snapshot.byId?.[id];
+  return (summary && !index.subagents.has(id)) ? id : undefined;
+}
+
+export function aggregateSessionStatus(snapshot, statuses, id, extra = {}) {
+  const isMap = statuses instanceof Map;
+  const own = isMap ? statuses.get(id) : statuses?.[id];
+  const summary = snapshot?.byId?.[id];
+  const children = getSessionIndex(snapshot).childrenByRoot.get(id);
   let pendingInteraction = own?.pendingInteraction;
   let childRunning = false;
   let childUnread = false;
-  for (const childId of childIds) {
-    const childStatus = statusOf(childId);
-    if (!pendingInteraction && childStatus?.pendingInteraction) pendingInteraction = childStatus.pendingInteraction;
-    if ((childStatus?.running ?? snapshot?.byId?.[childId]?.running) === true) childRunning = true;
-    if (childStatus?.completionUnread) childUnread = true;
+  if (children) {
+    const byId = snapshot?.byId;
+    for (let i = 0; i < children.length; i++) {
+      const childId = children[i];
+      const childStatus = isMap ? statuses.get(childId) : statuses?.[childId];
+      if (!pendingInteraction && childStatus?.pendingInteraction) pendingInteraction = childStatus.pendingInteraction;
+      if ((childStatus?.running ?? byId?.[childId]?.running) === true) childRunning = true;
+      if (childStatus?.completionUnread) childUnread = true;
+    }
   }
   const running = Boolean((own?.running ?? summary?.running) || childRunning);
   const completionUnread = !running && Boolean(
@@ -283,52 +353,77 @@ export function isSessionActive(status, summary, draft = false) {
 }
 
 export function candidates(snapshot, archived, history, current, draftIds = [], options = {}) {
-  const excluded = new Set(archived);
-  const drafts = new Set(draftIds);
-  const activeCurrent = resolveSessionTarget(snapshot, current);
+  const index = getSessionIndex(snapshot);
+  const byId = snapshot?.byId;
   const topIds = Array.isArray(snapshot?.ids) ? snapshot.ids : [];
-  const available = topIds.filter(id =>
-    !excluded.has(id) &&
-    snapshot?.byId?.[id] &&
-    !isSubagentSession(snapshot, id) &&
-    (id === activeCurrent || drafts.has(id) || snapshot.byId[id].blank !== true));
+  if (!byId || !topIds.length) return [];
+
+  const excluded = archived?.length ? new Set(archived) : null;
+  const drafts = draftIds?.length ? new Set(draftIds) : null;
+  const activeCurrent = resolveSessionTarget(snapshot, current);
+  const available = [];
+  for (let i = 0; i < topIds.length; i++) {
+    const id = topIds[i];
+    const summary = byId[id];
+    if (!summary || excluded?.has(id) || index.subagents.has(id)) continue;
+    if (id === activeCurrent || summary.blank !== true || drafts?.has(id)) available.push(id);
+  }
+  if (!available.length) return [];
+
   const allowed = new Set(available);
   const completedMap = options?.completedAt;
-  const completedOf = id => sessionTimestamp(completedMap instanceof Map ? completedMap.get(id) : completedMap?.[id]);
-  const updated = new Map(available.map(id => [
-    id,
-    Math.max(sessionTimestamp(snapshot.byId[id].updatedAt), completedOf(id)),
-  ]));
+  const completedIsMap = completedMap instanceof Map;
+  const updated = new Map();
+  for (let i = 0; i < available.length; i++) {
+    const id = available[i];
+    const doneAt = completedMap ? sessionTimestamp(completedIsMap ? completedMap.get(id) : completedMap[id]) : 0;
+    updated.set(id, Math.max(sessionTimestamp(byId[id].updatedAt), doneAt));
+  }
   const recent = [...available].sort((a, b) => updated.get(b) - updated.get(a));
-  const ordered = [...new Set([activeCurrent, ...history, ...recent])].filter(id => id && allowed.has(id));
+  const ordered = [];
+  const seenOrder = new Set();
+  const pushOrdered = id => {
+    if (id && !seenOrder.has(id) && allowed.has(id)) {
+      seenOrder.add(id);
+      ordered.push(id);
+    }
+  };
+  pushOrdered(activeCurrent);
+  for (let i = 0; i < history.length; i++) pushOrdered(history[i]);
+  for (let i = 0; i < recent.length; i++) pushOrdered(recent[i]);
 
   const rule = SCOPE_RULES[options?.scope] || SCOPE_RULES.hot;
   if (!Number.isFinite(rule.windowMs)) return ordered.slice(0, rule.max);
 
   const now = typeof options?.now === 'number' && Number.isFinite(options.now) ? options.now : Date.now();
   const visitMap = options?.visitedAt;
+  const visitIsMap = visitMap instanceof Map;
   const statusMap = options?.statuses;
+  const statusIsMap = statusMap instanceof Map;
   const unreadSet = options?.unreadIds instanceof Set ? options.unreadIds : (Array.isArray(options?.unreadIds) ? new Set(options.unreadIds) : null);
-  const visitOf = id => sessionTimestamp(visitMap instanceof Map ? visitMap.get(id) : visitMap?.[id]);
 
-  const hot = ordered.filter(id => {
-    if (id === activeCurrent) return true;
+  const hot = [];
+  for (let i = 0; i < ordered.length && hot.length < rule.max; i++) {
+    const id = ordered[i];
+    if (id === activeCurrent) { hot.push(id); continue; }
+    const ownStatus = statusIsMap ? statusMap.get(id) : statusMap?.[id];
     const effective = aggregateSessionStatus(
       snapshot,
       statusMap,
       id,
-      unreadSet ? { unread: unreadSet.has(id) || Boolean((statusMap instanceof Map ? statusMap.get(id) : statusMap?.[id])?.completionUnread) } : {},
+      unreadSet ? { unread: unreadSet.has(id) || Boolean(ownStatus?.completionUnread) } : {},
     );
-    if (isSessionActive(effective, snapshot.byId[id], drafts.has(id))) return true;
-    const touched = Math.max(updated.get(id) || 0, visitOf(id));
-    return touched > 0 && now - touched <= rule.windowMs;
-  });
+    if (isSessionActive(effective, byId[id], Boolean(drafts?.has(id)))) { hot.push(id); continue; }
+    const visited = visitMap ? sessionTimestamp(visitIsMap ? visitMap.get(id) : visitMap[id]) : 0;
+    const touched = Math.max(updated.get(id) || 0, visited);
+    if (touched > 0 && now - touched <= rule.windowMs) hot.push(id);
+  }
 
-  if (hot.length >= rule.min) return hot.slice(0, rule.max);
+  if (hot.length >= rule.min) return hot;
   const picked = new Set(hot);
   const result = [...hot];
-  for (const id of ordered) {
-    if (result.length >= rule.min) break;
+  for (let i = 0; i < ordered.length && result.length < rule.min; i++) {
+    const id = ordered[i];
     if (!picked.has(id)) { picked.add(id); result.push(id); }
   }
   return result.slice(0, rule.max);

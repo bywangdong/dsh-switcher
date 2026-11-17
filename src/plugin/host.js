@@ -1,4 +1,4 @@
-import { HISTORY_KEY, HISTORY_TIMES_KEY, ACTIVITY_KEY, READ_DWELL_MS, DEFAULT_PREFS, UI_COPY, normalizeLocale, detectEnvironmentLocale, uiCopy, readHistory, remember, readVisitTimes, rememberVisit, readActivityState, serializeActivityState, latestActivityTimestamp, isSubagentSession, resolveSessionTarget, aggregateSessionStatus, candidates, sessionTimestamp, latestUserInput, hasDraft, sessionPresentation, sessionWorkspaceName } from './core.js';
+import { HISTORY_KEY, HISTORY_TIMES_KEY, ACTIVITY_KEY, READ_DWELL_MS, DEFAULT_PREFS, UI_COPY, normalizeLocale, detectEnvironmentLocale, uiCopy, readHistory, remember, readVisitTimes, rememberVisit, readActivityState, serializeActivityState, latestActivityTimestamp, getSessionIndex, resolveSessionTarget, aggregateSessionStatus, candidates, sessionTimestamp, latestUserInput, hasDraft, sessionPresentation, sessionWorkspaceName } from './core.js';
 
 // Adapter for the public client services shipped in DSH 0.2.1+ / 0.2.2+.
 export function createHostAdapter(ctx, options = {}) {
@@ -15,11 +15,11 @@ export function createHostAdapter(ctx, options = {}) {
   });
 
   let history = [], visitTimes = {}, disposed = false, observedId, recordedId, observedBinding, stopCurrent = () => {};
-  let dwellId, dwellTimer;
+  let dwellId, dwellTimer, lastSnapshot = null, lastStatusMap = null, baselineSeeded = false;
   const listeners = new Set(), cache = new Map(), previewOwners = new Set();
-  const wasRunning = new Map(), rawRunning = new Map(), completedAt = new Map();
-  const localUnread = new Set(), seenHostUnread = new Set(), knownIds = new Set();
-  let baselineSeeded = false;
+  const wasRunning = new Map(), rawRunning = new Map(), completedAt = new Map(), prevStatusSnapshot = new Map();
+  const localUnread = new Set(), seenHostUnread = new Set(), knownIds = new Set(), activeRawStatusIds = new Set();
+  const subagentFallbackCache = new WeakMap();
 
   try {
     history = readHistory(sessionStorage.getItem(HISTORY_KEY));
@@ -36,8 +36,27 @@ export function createHostAdapter(ctx, options = {}) {
   };
 
   const current = () => ctx.sidebarRight.mounted.getSnapshot();
-  const isSubagent = (snapshot, id) => isSubagentSession(snapshot, id) ||
-    Boolean(id && typeof ctx.sessions.subagentAddress === 'function' && ctx.sessions.subagentAddress(id));
+  const checkHostSubagent = (snapshot, id) => {
+    if (!id || typeof ctx.sessions.subagentAddress !== 'function') return false;
+    if (snapshot && typeof snapshot === 'object') {
+      let map = subagentFallbackCache.get(snapshot);
+      if (!map) { map = new Map(); subagentFallbackCache.set(snapshot, map); }
+      if (map.has(id)) return map.get(id);
+      const res = Boolean(ctx.sessions.subagentAddress(id));
+      map.set(id, res);
+      return res;
+    }
+    return Boolean(ctx.sessions.subagentAddress(id));
+  };
+  const isSubagent = (snapshot, id) => {
+    if (!id) return false;
+    const index = getSessionIndex(snapshot);
+    if (index.subagents.has(id) || index.catalogParent.has(id)) return true;
+    // Top-level rows in `snapshot.ids` that passed `index.subagents` are authoritative non-subagent sessions;
+    // never invoke DSH's linear `ctx.sessions.subagentAddress` fallback on normal top-level sessions.
+    if (index.topSet?.has(id) && snapshot?.byId?.[id]) return false;
+    return checkHostSubagent(snapshot, id);
+  };
   const activeSession = () => {
     const snapshot = ctx.sessions.list.getSnapshot(), id = current();
     return isSubagent(snapshot, id) ? resolveSessionTarget(snapshot, id) : id;
@@ -85,81 +104,159 @@ export function createHostAdapter(ctx, options = {}) {
     return false;
   };
 
-  function syncCompletionState(snapshot, statusMap, rawMounted, at) {
-    // Only a non-subagent session actively visible in a focused, uncovered window counts as being read.
-    // Completions while on Tasks/Plugins/Settings, covered by a modal, or with DSH in the background stay unread,
-    // and opening an unread session requires `readDwellMs` before `New result` clears.
-    const viewedTopId = foregroundViewedId(snapshot, rawMounted);
+  function evaluateTopSession(snapshot, statusMap, id, summary, viewedTopId, at) {
     let dirty = false;
+    const runningNow = aggregateSessionStatus(snapshot, statusMap, id).running;
+    const prevTop = wasRunning.get(id);
+    wasRunning.set(id, runningNow);
+    if (runningNow) {
+      if (localUnread.delete(id)) dirty = true;
+      return dirty;
+    }
+    if (prevTop === true || (prevTop === undefined && rawRunning.get(id) === false && !knownIds.has(id) && baselineSeeded && !summary.blank)) {
+      completedAt.set(id, at);
+      if (id !== viewedTopId) localUnread.add(id);
+      return true;
+    }
+    if (baselineSeeded && !knownIds.has(id) && !summary.blank && id !== viewedTopId) {
+      const summaryTime = sessionTimestamp(summary.updatedAt);
+      if (!summaryTime || (at - summaryTime <= 5 * 60_000)) {
+        completedAt.set(id, at);
+        localUnread.add(id);
+        return true;
+      }
+    }
+    return dirty;
+  }
 
-    if (statusMap instanceof Map) {
+  function syncCompletionState(snapshot, statusMap, rawMounted, at) {
+    const index = getSessionIndex(snapshot);
+    const listChanged = snapshot !== lastSnapshot;
+    const prevById = listChanged ? lastSnapshot?.byId : null;
+    const prevChildren = listChanged && lastSnapshot ? getSessionIndex(lastSnapshot).childrenByRoot : null;
+    lastSnapshot = snapshot;
+
+    const viewedTopId = foregroundViewedId(snapshot, rawMounted);
+    const dirtyParents = new Set();
+    let dirtyStorage = false;
+    let statusDiffChanged = false;
+
+    if (statusMap instanceof Map && (listChanged || statusMap !== lastStatusMap)) {
+      lastStatusMap = statusMap;
+      for (const rawId of activeRawStatusIds) {
+        if (!statusMap.has(rawId)) {
+          activeRawStatusIds.delete(rawId);
+          prevStatusSnapshot.delete(rawId);
+          seenHostUnread.delete(rawId);
+          statusDiffChanged = true;
+          const parent = resolveSessionTarget(snapshot, rawId) || rawId;
+          if (parent) dirtyParents.add(parent);
+        }
+      }
       for (const [rawId, st] of statusMap.entries()) {
-        const resolved = isSubagent(snapshot, rawId) ? resolveSessionTarget(snapshot, rawId) : rawId;
-        const targetId = resolved || (!isSubagent(snapshot, rawId) ? rawId : undefined);
-        if (st?.completionUnread) {
-          if (!seenHostUnread.has(rawId)) {
+        const r = st?.running;
+        const u = Boolean(st?.completionUnread);
+        const p = st?.pendingInteraction;
+        const sub = u && !seenHostUnread.has(rawId) ? isSubagent(snapshot, rawId) : undefined;
+        const prev = prevStatusSnapshot.get(rawId);
+        if (
+          prev !== undefined &&
+          prev.running === r &&
+          prev.completionUnread === u &&
+          prev.pendingInteraction === p &&
+          (!u || seenHostUnread.has(rawId))
+        ) {
+          continue;
+        }
+        if (prev === undefined) {
+          prevStatusSnapshot.set(rawId, { running: r, completionUnread: u, pendingInteraction: p });
+        } else {
+          prev.running = r; prev.completionUnread = u; prev.pendingInteraction = p;
+        }
+        if (r === true || u) activeRawStatusIds.add(rawId);
+        else activeRawStatusIds.delete(rawId);
+        statusDiffChanged = true;
+
+        const isSub = sub !== undefined ? sub : isSubagent(snapshot, rawId);
+        const resolved = isSub ? resolveSessionTarget(snapshot, rawId) : rawId;
+        const targetId = resolved || (!isSub ? rawId : undefined);
+        if (targetId) dirtyParents.add(targetId);
+
+        if (u) {
+          if (!seenHostUnread.has(rawId) && targetId) {
             seenHostUnread.add(rawId);
-            if (targetId && targetId !== viewedTopId) {
-              if (!localUnread.has(targetId)) { localUnread.add(targetId); dirty = true; }
-              if (baselineSeeded) { completedAt.set(targetId, at); dirty = true; }
+            if (targetId !== viewedTopId) {
+              if (!localUnread.has(targetId)) { localUnread.add(targetId); dirtyStorage = true; }
+              if (baselineSeeded) { completedAt.set(targetId, at); dirtyStorage = true; }
             }
           }
         } else {
           seenHostUnread.delete(rawId);
         }
-        if (typeof st?.running === 'boolean') {
+        if (typeof r === 'boolean') {
           const prevRaw = rawRunning.get(rawId);
-          rawRunning.set(rawId, st.running);
-          if (st.running) {
-            if (targetId && !isSubagent(snapshot, rawId) && localUnread.delete(targetId)) dirty = true;
+          rawRunning.set(rawId, r);
+          if (r) {
+            if (targetId && !isSub && localUnread.delete(targetId)) dirtyStorage = true;
           } else if (prevRaw === true && targetId && targetId !== viewedTopId && !snapshot?.byId?.[targetId]) {
             localUnread.add(targetId);
             completedAt.set(targetId, at);
-            dirty = true;
+            dirtyStorage = true;
           }
         }
       }
     }
 
-    const topIds = Array.isArray(snapshot?.ids) ? snapshot.ids : [];
-    const listReady = snapshot?.phase ? snapshot.phase === 'ready' : topIds.length > 0;
-    for (const id of topIds) {
-      const summary = snapshot?.byId?.[id];
-      if (!summary || isSubagent(snapshot, id)) continue;
-      const runningNow = aggregateSessionStatus(snapshot, statusMap, id).running;
-      const prevTop = wasRunning.get(id);
-      wasRunning.set(id, runningNow);
-      const summaryTime = sessionTimestamp(summary.updatedAt);
-      const freshArrival = !summaryTime || (at - summaryTime <= 5 * 60_000);
-      if (runningNow) {
-        if (localUnread.delete(id)) dirty = true;
-      } else if (prevTop === true || (prevTop === undefined && rawRunning.get(id) === false && !knownIds.has(id) && baselineSeeded && !summary.blank)) {
-        completedAt.set(id, at);
-        if (id !== viewedTopId) localUnread.add(id);
-        dirty = true;
-      } else if (baselineSeeded && !knownIds.has(id) && !summary.blank && id !== viewedTopId && freshArrival) {
-        completedAt.set(id, at);
-        localUnread.add(id);
-        dirty = true;
+    if (listChanged) {
+      const topIds = Array.isArray(snapshot?.ids) ? snapshot.ids : [];
+      const byId = snapshot?.byId || {};
+      const listReady = snapshot?.phase ? snapshot.phase === 'ready' : topIds.length > 0;
+      for (let i = 0; i < topIds.length; i++) {
+        const id = topIds[i];
+        const summary = byId[id];
+        if (!summary || index.subagents.has(id)) continue;
+        if (
+          baselineSeeded &&
+          knownIds.has(id) &&
+          !dirtyParents.has(id) &&
+          prevById?.[id] === summary &&
+          !index.childrenByRoot.has(id) &&
+          !prevChildren?.has(id)
+        ) {
+          continue;
+        }
+        if (evaluateTopSession(snapshot, statusMap, id, summary, viewedTopId, at)) dirtyStorage = true;
+        if (listReady) knownIds.add(id);
       }
-      if (listReady) knownIds.add(id);
-    }
-    if (listReady) {
-      baselineSeeded = true;
-      const present = new Set(Object.keys(snapshot?.byId || {}));
-      for (const id of [...knownIds]) {
-        if (!present.has(id)) {
-          knownIds.delete(id);
-          if (localUnread.delete(id)) dirty = true;
-          if (completedAt.delete(id)) dirty = true;
-          wasRunning.delete(id);
-          rawRunning.delete(id);
-          seenHostUnread.delete(id);
+      if (listReady) {
+        baselineSeeded = true;
+        for (const id of knownIds) {
+          if (!byId[id]) {
+            knownIds.delete(id);
+            if (localUnread.delete(id)) dirtyStorage = true;
+            if (completedAt.delete(id)) dirtyStorage = true;
+            wasRunning.delete(id);
+            rawRunning.delete(id);
+            seenHostUnread.delete(id);
+            prevStatusSnapshot.delete(id);
+            activeRawStatusIds.delete(id);
+          }
+        }
+      }
+    } else if (dirtyParents.size > 0) {
+      const byId = snapshot?.byId;
+      if (byId) {
+        for (const id of dirtyParents) {
+          const summary = byId[id];
+          if (!summary || index.subagents.has(id)) continue;
+          if (evaluateTopSession(snapshot, statusMap, id, summary, viewedTopId, at)) dirtyStorage = true;
         }
       }
     }
-    syncReadDwell(viewedTopId);
-    if (dirty) persistActivity();
+
+    if (syncReadDwell(viewedTopId)) statusDiffChanged = true;
+    if (dirtyStorage) persistActivity();
+    return listChanged || statusDiffChanged || dirtyStorage;
   }
 
   function watch(binding) {
@@ -292,8 +389,9 @@ export function createHostAdapter(ctx, options = {}) {
 
   function onStatusChange() {
     if (disposed) return;
-    syncCompletionState(ctx.sessions.list.getSnapshot(), ctx.uiSession.sessionStatus.getSnapshot(), current(), clock());
-    publish();
+    if (syncCompletionState(ctx.sessions.list.getSnapshot(), ctx.uiSession.sessionStatus.getSnapshot(), current(), clock())) {
+      publish();
+    }
   }
 
   function onForegroundChange() {
@@ -328,6 +426,27 @@ export function createHostAdapter(ctx, options = {}) {
     current,
     activeSession,
     locale: resolveLocale,
+    canPreview: () => {
+      const snapshot = ctx.sessions.list.getSnapshot();
+      const topIds = Array.isArray(snapshot?.ids) ? snapshot.ids : [];
+      if (topIds.length < 2) return false;
+      const byId = snapshot?.byId;
+      if (!byId) return false;
+      const index = getSessionIndex(snapshot);
+      const archivedIds = ctx.workspaces.list.getSnapshot().archivedSessionIds;
+      const excluded = archivedIds?.length ? new Set(archivedIds) : null;
+      const activeCurrent = activeSession();
+      let count = 0;
+      for (let i = 0; i < topIds.length; i++) {
+        const id = topIds[i];
+        const summary = byId[id];
+        if (!summary || index.subagents.has(id) || excluded?.has(id)) continue;
+        if (id === activeCurrent || summary.blank !== true || cache.get(id)?.draft) {
+          if (++count >= 2) return true;
+        }
+      }
+      return false;
+    },
     candidates: () => candidates(
       ctx.sessions.list.getSnapshot(),
       ctx.workspaces.list.getSnapshot().archivedSessionIds || [],
@@ -404,8 +523,9 @@ export function createHostAdapter(ctx, options = {}) {
       for (const release of [...previewOwners]) release();
       for (const stop of stops) stop();
       listeners.clear(); cache.clear();
-      wasRunning.clear(); rawRunning.clear(); completedAt.clear();
-      localUnread.clear(); seenHostUnread.clear(); knownIds.clear();
+      wasRunning.clear(); rawRunning.clear(); completedAt.clear(); prevStatusSnapshot.clear();
+      localUnread.clear(); seenHostUnread.clear(); knownIds.clear(); activeRawStatusIds.clear();
+      lastSnapshot = null; lastStatusMap = null;
     },
   };
 }

@@ -83,16 +83,21 @@ window.__ModuleLoader__.load({
         const anchor = React.useRef(null);
         React.useEffect(() => {
           const releaseStyle = retainStyle();
+          const checkCanPreview = () => Boolean(liveHost?.canPreview ? liveHost.canPreview() : (liveHost?.candidates().length || 0) >= 2);
+          let lastCanPreview = checkCanPreview();
           const settings = mountSettingsPanel(anchor.current, {
             prefs: prefsStore,
             getTheme: () => ctx.theme.getTheme().active.colorScheme === 'dark' ? 'dark' : 'light',
             subscribeTheme: fn => ctx.on('theme/change', fn),
             getLocale: getHostLocale,
             subscribeLocale: subscribeHostLocale,
-            canPreview: () => (liveHost?.candidates().length || 0) >= 2,
+            canPreview: checkCanPreview,
             onPreview: () => liveController?.begin(1, true),
           });
-          const stopSessions = ctx.sessions.list.subscribe(() => settings.sync());
+          const stopSessions = ctx.sessions.list.subscribe(() => {
+            const next = checkCanPreview();
+            if (next !== lastCanPreview) { lastCanPreview = next; settings.sync(); }
+          });
           return () => { stopSessions(); settings.destroy(); releaseStyle(); };
         }, []);
         return React.createElement('div', { ref: anchor, 'data-dsh-switcher-settings-root': '' });
