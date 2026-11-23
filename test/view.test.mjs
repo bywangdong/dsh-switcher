@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPrefsStore, sessionPresentation } from '../src/plugin/core.js';
-import { mountSwitcher } from '../src/plugin/view.js';
+import { mountSwitcher, MODAL_BLOCK_SELECTOR } from '../src/plugin/view.js';
 import { mountSettingsPanel } from '../src/plugin/settings.js';
 
 function domEnvironment(t) {
@@ -82,7 +82,7 @@ function domEnvironment(t) {
     return out;
   }
 
-  return { Node, findAll, flushFrames() { const fns = [...frames.values()]; frames.clear(); fns.forEach(fn => fn(performance.now())); } };
+  return { Node, doc, win, findAll, flushFrames() { const fns = [...frames.values()]; frames.clear(); fns.forEach(fn => fn(performance.now())); } };
 }
 
 test('mountSwitcher switches cleanly across Status-First, B2, and Split editions and positions the lens', async t => {
@@ -433,6 +433,80 @@ test('mountSwitcher renders distinct data-recency attributes and 5-bar SVG meter
     }).length;
   };
   assert.deepEqual(icons.map(uprightBarsOf), [5, 3, 1, 0]);
+
+  sw.destroy();
+});
+
+test('mountSwitcher ignores collapsed sidebar drawers while still yielding to active modals and shortcut editors', t => {
+  const env = domEnvironment(t);
+  const prefs = createPrefsStore();
+  const container = new env.Node();
+
+  // Evaluate MODAL_BLOCK_SELECTOR clauses directly against mock DOM elements.
+  let activeElements = [];
+  const matchesSingleClause = (el, clause) => {
+    const trimmed = clause.trim();
+    if (trimmed === '[aria-modal="true"]') return el['aria-modal'] === 'true';
+    if (trimmed === '[data-shortcut-modal]:not([role="dialog"])') {
+      return el['data-shortcut-modal'] !== undefined && el.role !== 'dialog';
+    }
+    throw new Error(`Unexpected selector clause: ${trimmed}`);
+  };
+  env.doc.querySelector = selector => {
+    assert.equal(selector, MODAL_BLOCK_SELECTOR);
+    const clauses = selector.split(',');
+    return activeElements.find(el => clauses.some(clause => matchesSingleClause(el, clause))) || null;
+  };
+
+  const host = {
+    current: () => 's1',
+    candidates: () => ['s1', 's2'],
+    exists: id => id === 's1' || id === 's2',
+    theme: () => 'dark',
+    prefs: () => prefs.getSnapshot(),
+    row: id => ({
+      id,
+      title: `Session ${id}`,
+      workspaceName: 'Workspace',
+      text: '',
+      placeholder: 'No input yet',
+      ...sessionPresentation({}, { updatedAt: Date.now() }, false),
+    }),
+    preview: () => () => {},
+    subscribe: () => () => {},
+    open() {},
+  };
+
+  const sw = mountSwitcher(container, host);
+  const pressCtrlTab = () => {
+    const event = new Event('keydown', { cancelable: true });
+    Object.assign(event, { key: 'Tab', code: 'Tab', ctrlKey: true });
+    env.win.dispatchEvent(event);
+    return event;
+  };
+
+  // 1. Collapsed narrow-window sidebar drawer in DSH 0.2.3+ keeps role="dialog" + data-shortcut-modal="sidebar"
+  //    without aria-modal="true": must NOT block Ctrl+Tab.
+  activeElements = [{ role: 'dialog', 'data-shortcut-modal': 'sidebar' }];
+  const openEvent = pressCtrlTab();
+  assert.equal(openEvent.defaultPrevented, true);
+  assert.equal(sw.active, true);
+  sw.cancel();
+
+  // 2. Expanded sidebar drawer (aria-modal="true") must block Ctrl+Tab.
+  activeElements = [{ role: 'dialog', 'data-shortcut-modal': 'sidebar', 'aria-modal': 'true' }];
+  assert.equal(pressCtrlTab().defaultPrevented, false);
+  assert.equal(sw.active, false);
+
+  // 3. Inline shortcut editor (role="group", data-shortcut-modal="shortcut-edit") must block Ctrl+Tab.
+  activeElements = [{ role: 'group', 'data-shortcut-modal': 'shortcut-edit' }];
+  assert.equal(pressCtrlTab().defaultPrevented, false);
+  assert.equal(sw.active, false);
+
+  // 4. Generic modal dialog (role="dialog", aria-modal="true") must block Ctrl+Tab.
+  activeElements = [{ role: 'dialog', 'aria-modal': 'true' }];
+  assert.equal(pressCtrlTab().defaultPrevented, false);
+  assert.equal(sw.active, false);
 
   sw.destroy();
 });

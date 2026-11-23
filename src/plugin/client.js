@@ -11,7 +11,7 @@ window.__ModuleLoader__.load({
     /* BUILD_SETTINGS */
     /* BUILD_CSS */
     const inject = ['slots', 'sidebarRight', 'sessions', 'uiWorkspace', 'uiSession', 'conversation', 'workspaces', 'theme'];
-    function apply(ctx) {
+    function setup(ctx) {
       const prefsStore = createPrefsStore(typeof localStorage !== 'undefined' ? localStorage : undefined);
       let styleElement = null, styleUsers = 0, liveHost = null, liveController = null;
 
@@ -118,6 +118,21 @@ window.__ModuleLoader__.load({
         ctx.slots.register({ name: 'shell.overlay', id: 'dsh-switcher', order: 1000 }, Panel)), 'dsh-switcher: overlay');
       ctx.effect(() => ctx.slots.inject('plugins.bundle.config', () =>
         ctx.slots.register({ name: 'plugins.bundle.config', key: 'dsh-switcher' }, ConfigPanel)), 'dsh-switcher: config');
+    }
+    function apply(ctx) {
+      let hasInlineSessionStatus = false;
+      try {
+        hasInlineSessionStatus = typeof ctx.uiSession?.sessionStatus?.subscribe === 'function';
+      } catch {
+        hasInlineSessionStatus = false;
+      }
+      if (hasInlineSessionStatus) {
+        setup(ctx);
+      } else if (typeof ctx.inject === 'function') {
+        ctx.inject(['uiSession.sessionStatus'], setup);
+      } else {
+        setup(ctx);
+      }
     }
     return { inject, apply };
   },

@@ -1,6 +1,6 @@
 {
   "name": "dsh-switcher",
-  "version": "0.1.14-dev.8",
+  "version": "0.1.14-dev.9",
   "private": true,
   "description": "DSH Switcher — Ctrl+Tab 最近会话切换器 / Recent Session Switcher",
   "type": "module",
@@ -30,7 +30,7 @@
     "bundle": { "patch": "./cordis.patch.yml" },
     "client": {
       "platform": "web",
-      "inject": ["@deepseek-ai/dsh-client-ui-layout", "@deepseek-ai/dsh-client-ui-sidebar-right", "@deepseek-ai/dsh-client-ui-conversation", "@deepseek-ai/dsh-client-ui-workspace", "@deepseek-ai/dsh-client-ui-session", "@deepseek-ai/dsh-api-workspace-controller", "@deepseek-ai/dsh-client-ui-theme"]
+      "inject": ["@deepseek-ai/dsh-client-ui-layout", "@deepseek-ai/dsh-client-ui-sidebar-right", "@deepseek-ai/dsh-client-ui-conversation", "@deepseek-ai/dsh-client-ui-workspace", "@deepseek-ai/dsh-client-ui-session", "@deepseek-ai/dsh-client-ui-session-status", "@deepseek-ai/dsh-api-workspace-controller", "@deepseek-ai/dsh-client-ui-theme"]
     }
   },
   "repository": {

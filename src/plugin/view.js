@@ -2,6 +2,8 @@ import { SwitchCycle, phraseBreaks, normalizePrefs, samePrefs, isStatusFirstEdit
 import { createFivebeatMotion } from './motion.js';
 import { installSwitcherKeyboard } from './keyboard.js';
 
+export const MODAL_BLOCK_SELECTOR = '[aria-modal="true"], [data-shortcut-modal]:not([role="dialog"])';
+
 export function mountSwitcher(container, host, options = {}) {
   const inline = Boolean(options.inline);
   const reducedMotion = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
@@ -416,7 +418,7 @@ export function mountSwitcher(container, host, options = {}) {
   };
   if (!inline) {
     stops.push(installSwitcherKeyboard(window, controller, () =>
-      !!document.querySelector('[data-shortcut-modal], [aria-modal="true"]')));
+      !!document.querySelector(MODAL_BLOCK_SELECTOR)));
   }
   return controller;
 }

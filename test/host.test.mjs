@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { createHostAdapter } from '../src/plugin/host.js';
 
 function store(value) {
@@ -466,4 +468,149 @@ test('host follows live ctx.locale / locale/change updates across statuses, fall
 
   stopPreview();
   host.destroy();
+});
+
+function loadClientPluginRegistration() {
+  let source = readFileSync(new URL('../src/plugin/client.js', import.meta.url), 'utf8');
+  for (const name of ['core', 'motion', 'host', 'keyboard', 'view', 'settings']) {
+    const part = readFileSync(new URL(`../src/plugin/${name}.js`, import.meta.url), 'utf8')
+      .replace(/^import\b[\s\S]*?\bfrom\s+['"][^'"]+['"];\r?\n/gm, '')
+      .replace(/^export /gm, '');
+    source = source.replace(`/* BUILD_${name.toUpperCase()} */`, () => part);
+  }
+  source = source.replace('/* BUILD_CSS */', () => 'const SWITCHER_CSS = "";');
+
+  let registration;
+  const fakeWindow = Object.assign(new EventTarget(), {
+    __ModuleLoader__: { load(value) { registration = value; } },
+    getSelection: () => null,
+  });
+  const fakeDoc = Object.assign(new EventTarget(), {
+    hidden: false,
+    head: { append() {} },
+    body: { append() {} },
+    createElement: () => ({ dataset: {}, style: {}, append() {}, remove() {}, setAttribute() {} }),
+    querySelector: () => null,
+    hasFocus: () => true,
+  });
+  const fakeReact = {
+    useRef: initial => ({ current: initial }),
+    useEffect: fn => fn(),
+    useState: init => [typeof init === 'function' ? init() : init, () => {}],
+    createElement: (type, props) => ({ type, props }),
+  };
+  const fakeReactDom = { createPortal: node => node };
+
+  runInNewContext(source, {
+    window: fakeWindow,
+    document: fakeDoc,
+    EventTarget,
+    HTMLInputElement: class {},
+    HTMLTextAreaElement: class {},
+    matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+    requestAnimationFrame: () => 1,
+    cancelAnimationFrame() {},
+    setTimeout,
+    clearTimeout,
+    console,
+  });
+  const plugin = registration.factory(id => {
+    if (id === 'react') return fakeReact;
+    if (id === 'react-dom') return fakeReactDom;
+    throw new Error(`Unexpected module request: ${id}`);
+  });
+  return { plugin, fakeReact };
+}
+
+function makePluginCtx(uiSession) {
+  const registeredSlots = [];
+  const effects = [];
+  const status = store(new Map([['a', { running: false }]]));
+  const list = store({ phase: 'ready', ids: ['a', 'b'], byId: { a: { displayTitle: 'A' }, b: { displayTitle: 'B' } } });
+  const base = {
+    slots: {
+      inject: (_name, cb) => cb(),
+      register(opts, Component) { registeredSlots.push({ opts, Component }); return () => {}; },
+    },
+    sidebarRight: { mounted: store('a') },
+    sessions: { list, binding: () => undefined, retain: id => ({ binding: { sessionId: id, ctx: {}, session: Object.assign(store({ openState: 'open' }), { eventSource: store({ entries: [] }) }) }, ready: Promise.resolve(), release() {} }) },
+    uiWorkspace: { openSession() {} },
+    uiSession,
+    conversation: { input: { for: () => ({ state: store({ draft: '' }) }) } },
+    workspaces: { list: store({ archivedSessionIds: [], items: [] }) },
+    theme: { getTheme: () => ({ active: { colorScheme: 'dark' } }) },
+    on: () => () => {},
+    effect(cb) { const stop = cb(); effects.push(stop); return stop; },
+  };
+  return { base, status, registeredSlots, effects };
+}
+
+test('client plugin supports DSH 0.2.3+ uiSession.sessionStatus sub-service and legacy 0.2.1/0.2.2 uiSession', () => {
+  const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.ok(manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-session-status'));
+
+  const { plugin } = loadClientPluginRegistration();
+  assert.ok(!plugin.inject.includes('uiSession.sessionStatus'), 'top-level inject keeps legacy hosts unblocked');
+
+  // Case A: DSH 0.2.3+ throws when reading uiSession.sessionStatus without sub-service inject.
+  {
+    const injectCalls = [];
+    const { base, status, registeredSlots, effects } = makePluginCtx({
+      get sessionStatus() {
+        throw new Error('cannot get property "uiSession.sessionStatus" without inject');
+      },
+    });
+    const innerCtx = { ...base, uiSession: { sessionStatus: status } };
+    const outerCtx = {
+      ...base,
+      inject(deps, cb) {
+        injectCalls.push([...deps]);
+        cb(innerCtx);
+      },
+    };
+    plugin.apply(outerCtx);
+    assert.deepEqual(injectCalls, [['uiSession.sessionStatus']]);
+    assert.deepEqual(registeredSlots.map(s => s.opts.name), ['shell.overlay', 'plugins.bundle.config']);
+    const Panel = registeredSlots.find(s => s.opts.name === 'shell.overlay').Component;
+    const stopPanel = Panel();
+    assert.equal(typeof stopPanel, 'object');
+    for (const stop of effects) stop?.();
+  }
+
+  // Case B: DSH 0.2.3+ late-arriving uiSession.sessionStatus (initially undefined) defers registration until injected.
+  {
+    const injectCalls = [];
+    let deferredCallback;
+    const { base, status, registeredSlots, effects } = makePluginCtx({});
+    const outerCtx = {
+      ...base,
+      inject(deps, cb) {
+        injectCalls.push([...deps]);
+        deferredCallback = cb;
+      },
+    };
+    plugin.apply(outerCtx);
+    assert.deepEqual(injectCalls, [['uiSession.sessionStatus']]);
+    assert.equal(registeredSlots.length, 0);
+    deferredCallback({ ...base, uiSession: { sessionStatus: status } });
+    assert.deepEqual(registeredSlots.map(s => s.opts.name), ['shell.overlay', 'plugins.bundle.config']);
+    for (const stop of effects) stop?.();
+  }
+
+  // Case C: Legacy DSH 0.2.1/0.2.2 exposes uiSession.sessionStatus inline and mounts directly without ctx.inject.
+  {
+    const injectCalls = [];
+    const status = store(new Map([['a', { running: false }]]));
+    const { base, registeredSlots, effects } = makePluginCtx({ sessionStatus: status });
+    const legacyCtx = {
+      ...base,
+      inject(deps) { injectCalls.push([...deps]); },
+    };
+    plugin.apply(legacyCtx);
+    assert.deepEqual(injectCalls, []);
+    assert.deepEqual(registeredSlots.map(s => s.opts.name), ['shell.overlay', 'plugins.bundle.config']);
+    const Panel = registeredSlots.find(s => s.opts.name === 'shell.overlay').Component;
+    Panel();
+    for (const stop of effects) stop?.();
+  }
 });
