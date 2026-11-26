@@ -195,6 +195,7 @@ export function mountSwitcher(container, host, options = {}) {
     const nextPrefs = normalizePrefs(host.prefs?.());
     const nextIds = inline ? host.candidates() : cycle.ids;
     const idsChanged = inline && nextIds.length >= 2 && (nextIds.length !== cycle.ids.length || nextIds.some((id, idx) => id !== cycle.ids[idx]));
+    const previewChanged = idsChanged || isStatusFirstEdition(nextPrefs.edition) !== isStatusFirstEdition(prefs.edition);
     let immediateSelection = false;
     if (idsChanged) {
       const keep = nextIds.includes(cycle.selected) ? cycle.selected : nextIds[Math.min(cycle.index, nextIds.length - 1)];
@@ -210,6 +211,7 @@ export function mountSwitcher(container, host, options = {}) {
       prefs = nextPrefs; applyPrefsAttributes();
       if (motionChanged) { motion?.setMode(prefs.motion); immediateSelection = true; }
     }
+    if (previewChanged && overlay.dataset.revealed === 'true') retainPreview();
 
     const nextLocale = normalizeLocale(host.locale?.());
     if (nextLocale !== activeLocale) {
@@ -319,6 +321,12 @@ export function mountSwitcher(container, host, options = {}) {
     }
   }
 
+  function retainPreview() {
+    const previous = releasePreview;
+    releasePreview = host.preview(cycle.ids, { includeHistory: !isStatusFirstEdition(prefs.edition) });
+    previous();
+  }
+
   function reveal() {
     if (!cycle || !overlay) return;
     overlay.dataset.revealed = 'true';
@@ -328,7 +336,7 @@ export function mountSwitcher(container, host, options = {}) {
       node.motion = motion.mount(node.icon, mKind, row.draft);
       node.motionKind = mKind;
     }
-    releasePreview = host.preview(cycle.ids);
+    retainPreview();
     refresh(); scrollSelected(true);
     if (!inline) list?.focus({ preventScroll: true });
   }

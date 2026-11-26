@@ -8,6 +8,8 @@ export function createHostAdapter(ctx, options = {}) {
   const activityStorage = options.activityStorage !== undefined
     ? options.activityStorage
     : (typeof sessionStorage !== 'undefined' ? sessionStorage : undefined);
+  const sessionStatus = ctx.uiSession.sessionStatus;
+  const readingReady = sessionStatus.readingReady;
   const localeService = typeof ctx.get === 'function' ? ctx.get('locale') : ctx.locale;
   const resolveLocale = options.getLocale || (() => {
     const active = localeService?.getSnapshot?.()?.active;
@@ -19,6 +21,9 @@ export function createHostAdapter(ctx, options = {}) {
   const listeners = new Set(), cache = new Map(), previewOwners = new Set();
   const wasRunning = new Map(), rawRunning = new Map(), completedAt = new Map(), prevStatusSnapshot = new Map();
   const localUnread = new Set(), seenHostUnread = new Set(), knownIds = new Set(), activeRawStatusIds = new Set();
+  // Native marks belong to DSH. Only reminders rolled up from children are acknowledged locally.
+  const childUnread = new Set();
+  let nativeReading = false;
   const subagentFallbackCache = new WeakMap();
 
   try {
@@ -29,10 +34,13 @@ export function createHostAdapter(ctx, options = {}) {
     const saved = readActivityState(activityStorage?.getItem(ACTIVITY_KEY));
     for (const [id, at] of Object.entries(saved.activity)) completedAt.set(id, at);
     for (const id of saved.unread) localUnread.add(id);
+    for (const id of saved.childUnread) childUnread.add(id);
   } catch { /* Memory-only activity state remains usable. */ }
 
-  const persistActivity = (keepIds = null) => {
-    try { activityStorage?.setItem(ACTIVITY_KEY, serializeActivityState(completedAt, localUnread, keepIds)); } catch { /* Ignore quota/access errors. */ }
+  const persistActivity = () => {
+    // DSH restores confirmed child marks itself, including reads made while this client was closed.
+    const inferredChildren = [...childUnread].filter(id => !seenHostUnread.has(id));
+    try { activityStorage?.setItem(ACTIVITY_KEY, serializeActivityState(completedAt, localUnread, null, inferredChildren)); } catch { /* Ignore quota/access errors. */ }
   };
 
   const current = () => ctx.sidebarRight.mounted.getSnapshot();
@@ -78,14 +86,21 @@ export function createHostAdapter(ctx, options = {}) {
     dwellId = undefined;
   };
   const publish = () => { if (!disposed) for (const listener of listeners) listener(); };
+  const childrenOf = id => getSessionIndex(ctx.sessions.list.getSnapshot()).childrenByRoot.get(id) || [];
   const markReadNow = id => {
     if (dwellId === id) clearDwell();
-    if (!localUnread.delete(id)) return false;
+    let changed = false;
+    if (nativeReading) {
+      for (const child of childrenOf(id)) if (childUnread.delete(child)) changed = true;
+    } else {
+      changed = localUnread.delete(id);
+    }
+    if (!changed) return false;
     persistActivity();
     return true;
   };
   const syncReadDwell = fgId => {
-    if (!fgId || !localUnread.has(fgId)) {
+    if (!fgId || !(nativeReading ? childrenOf(fgId).some(id => childUnread.has(id)) : localUnread.has(fgId))) {
       clearDwell();
       return false;
     }
@@ -113,12 +128,12 @@ export function createHostAdapter(ctx, options = {}) {
       if (localUnread.delete(id)) dirty = true;
       return dirty;
     }
-    if (prevTop === true || (prevTop === undefined && rawRunning.get(id) === false && !knownIds.has(id) && baselineSeeded && !summary.blank)) {
+    if (prevTop === true || (!nativeReading && prevTop === undefined && rawRunning.get(id) === false && !knownIds.has(id) && baselineSeeded && !summary.blank)) {
       completedAt.set(id, at);
-      if (id !== viewedTopId) localUnread.add(id);
+      if (!nativeReading && id !== viewedTopId) localUnread.add(id);
       return true;
     }
-    if (baselineSeeded && !knownIds.has(id) && !summary.blank && id !== viewedTopId) {
+    if (!nativeReading && baselineSeeded && !knownIds.has(id) && !summary.blank && id !== viewedTopId) {
       const summaryTime = sessionTimestamp(summary.updatedAt);
       if (!summaryTime || (at - summaryTime <= 5 * 60_000)) {
         completedAt.set(id, at);
@@ -140,6 +155,17 @@ export function createHostAdapter(ctx, options = {}) {
     const dirtyParents = new Set();
     let dirtyStorage = false;
     let statusDiffChanged = false;
+    // The first native baseline supersedes legacy guesses, even when the status Map is unchanged.
+    // DSH retains its last confirmed marks on disconnect, so continue using them until reconnection.
+    if (!nativeReading && readingReady?.getSnapshot() === true) {
+      nativeReading = true;
+      dirtyStorage = localUnread.size > 0;
+      localUnread.clear();
+      seenHostUnread.clear();
+      clearDwell();
+      lastStatusMap = null;
+      statusDiffChanged = true;
+    }
 
     if (statusMap instanceof Map && (listChanged || statusMap !== lastStatusMap)) {
       lastStatusMap = statusMap;
@@ -147,7 +173,7 @@ export function createHostAdapter(ctx, options = {}) {
         if (!statusMap.has(rawId)) {
           activeRawStatusIds.delete(rawId);
           prevStatusSnapshot.delete(rawId);
-          seenHostUnread.delete(rawId);
+          if (seenHostUnread.delete(rawId) && nativeReading && childUnread.delete(rawId)) dirtyStorage = true;
           statusDiffChanged = true;
           const parent = resolveSessionTarget(snapshot, rawId) || rawId;
           if (parent) dirtyParents.add(parent);
@@ -156,24 +182,27 @@ export function createHostAdapter(ctx, options = {}) {
       for (const [rawId, st] of statusMap.entries()) {
         const r = st?.running;
         const u = Boolean(st?.completionUnread);
+        const failed = Boolean(st?.completionFailed);
         const p = st?.pendingInteraction;
         const sub = u && !seenHostUnread.has(rawId) ? isSubagent(snapshot, rawId) : undefined;
         const prev = prevStatusSnapshot.get(rawId);
+        const wasUnread = prev?.completionUnread === true;
         if (
           prev !== undefined &&
           prev.running === r &&
           prev.completionUnread === u &&
+          prev.completionFailed === failed &&
           prev.pendingInteraction === p &&
           (!u || seenHostUnread.has(rawId))
         ) {
           continue;
         }
         if (prev === undefined) {
-          prevStatusSnapshot.set(rawId, { running: r, completionUnread: u, pendingInteraction: p });
+          prevStatusSnapshot.set(rawId, { running: r, completionUnread: u, completionFailed: failed, pendingInteraction: p });
         } else {
-          prev.running = r; prev.completionUnread = u; prev.pendingInteraction = p;
+          prev.running = r; prev.completionUnread = u; prev.completionFailed = failed; prev.pendingInteraction = p;
         }
-        if (r === true || u) activeRawStatusIds.add(rawId);
+        if (r === true || u || p) activeRawStatusIds.add(rawId);
         else activeRawStatusIds.delete(rawId);
         statusDiffChanged = true;
 
@@ -182,23 +211,29 @@ export function createHostAdapter(ctx, options = {}) {
         const targetId = resolved || (!isSub ? rawId : undefined);
         if (targetId) dirtyParents.add(targetId);
 
-        if (u) {
-          if (!seenHostUnread.has(rawId) && targetId) {
-            seenHostUnread.add(rawId);
-            if (targetId !== viewedTopId) {
-              if (!localUnread.has(targetId)) { localUnread.add(targetId); dirtyStorage = true; }
-              if (baselineSeeded) { completedAt.set(targetId, at); dirtyStorage = true; }
-            }
+        const newlyUnread = u && !seenHostUnread.has(rawId);
+        const justFinished = r === false && rawRunning.get(rawId) === true;
+        if (typeof r === 'boolean') rawRunning.set(rawId, r);
+        if (!u) seenHostUnread.delete(rawId);
+        else if (targetId && (!nativeReading || isSub || index.topSet.has(rawId))) seenHostUnread.add(rawId);
+
+        if (nativeReading) {
+          if (!isSub || !targetId) continue;
+          if (newlyUnread && childUnread.has(rawId)) dirtyStorage = true;
+          // Reading the parent dismisses its child reminders without marking the child in DSH.
+          if (r || (wasUnread && !u)) {
+            if (childUnread.delete(rawId)) dirtyStorage = true;
+          } else if (targetId !== viewedTopId && (newlyUnread || justFinished) && !childUnread.has(rawId)) {
+            childUnread.add(rawId);
+            dirtyStorage = true;
           }
-        } else {
-          seenHostUnread.delete(rawId);
-        }
-        if (typeof r === 'boolean') {
-          const prevRaw = rawRunning.get(rawId);
-          rawRunning.set(rawId, r);
-          if (r) {
-            if (targetId && !isSub && localUnread.delete(targetId)) dirtyStorage = true;
-          } else if (prevRaw === true && targetId && targetId !== viewedTopId && !snapshot?.byId?.[targetId]) {
+        } else if (targetId) {
+          if (newlyUnread && targetId !== viewedTopId) {
+            if (!localUnread.has(targetId)) { localUnread.add(targetId); dirtyStorage = true; }
+            if (baselineSeeded) { completedAt.set(targetId, at); dirtyStorage = true; }
+          }
+          if (r && !isSub && localUnread.delete(targetId)) dirtyStorage = true;
+          if (justFinished && targetId !== viewedTopId && !snapshot?.byId?.[targetId]) {
             localUnread.add(targetId);
             completedAt.set(targetId, at);
             dirtyStorage = true;
@@ -259,7 +294,7 @@ export function createHostAdapter(ctx, options = {}) {
     return listChanged || statusDiffChanged || dirtyStorage;
   }
 
-  function watch(binding) {
+  function watch(binding, includeHistory = true) {
     const id = binding.sessionId, session = binding.session;
     const prevCached = cache.get(id);
     let input, eventWindow, windowHasInput = false;
@@ -273,10 +308,9 @@ export function createHostAdapter(ctx, options = {}) {
     };
     const refresh = () => {
       if (disposed) return;
-      const snapshot = session.getSnapshot();
       const previous = cache.get(id);
       let activityPublished = false;
-      const nextWindow = session.eventSource.getSnapshot();
+      const nextWindow = includeHistory ? session.eventSource.getSnapshot() : undefined;
       if (nextWindow !== eventWindow) {
         // DSH exposes contiguous event-window changes. Streaming assistant chunks
         // must not materialize and scan the complete history for an unchanged user line.
@@ -286,7 +320,7 @@ export function createHostAdapter(ctx, options = {}) {
         if (change?.kind === 'append' && Array.isArray(change.entries)) {
           found = extractInput(change.entries);
           latestAt = latestActivityTimestamp(change.entries);
-          if (found && id === foregroundViewedId(ctx.sessions.list.getSnapshot(), current())) markReadNow(id);
+          if (found && id === foregroundViewedId(ctx.sessions.list.getSnapshot(), current())) activityPublished = markReadNow(id);
         } else if (change?.kind === 'prepend' && Array.isArray(change.entries)) {
           // A cached fallback can predate this window's actual latest user input.
           if (!windowHasInput) found = extractInput(change.entries);
@@ -308,22 +342,25 @@ export function createHostAdapter(ctx, options = {}) {
           completedAt.set(id, latestAt);
           if (settled || latestAt - prevRecorded >= 30_000) {
             persistActivity();
-            activityPublished = latestAt > prevRecorded;
+            activityPublished ||= latestAt > prevRecorded;
           }
         }
         eventWindow = nextWindow;
       }
       const draftState = input?.getSnapshot();
-      const draftNow = hasDraft(draftState?.draft) || !!draftState?.attachmentIds?.length;
-      if (previous && !previous.draft && draftNow && id === foregroundViewedId(ctx.sessions.list.getSnapshot(), current())) {
+      const textDraft = hasDraft(draftState?.draft);
+      const attachmentDraft = Boolean(draftState?.attachmentIds?.length);
+      if (previous && !previous.textDraft && !previous.attachmentDraft && (textDraft || attachmentDraft) && id === foregroundViewedId(ctx.sessions.list.getSnapshot(), current())) {
         if (markReadNow(id)) activityPublished = true;
       }
+      const openState = includeHistory ? session.getSnapshot().openState : undefined;
       const next = {
-        text,
-        attachmentOnly,
-        ready: snapshot.openState === 'open',
-        error: snapshot.openState === 'error',
-        draft: draftNow,
+        text: includeHistory ? text : previous?.text,
+        attachmentOnly: includeHistory ? attachmentOnly : previous?.attachmentOnly,
+        ready: includeHistory ? openState === 'open' : previous?.ready,
+        error: includeHistory ? openState === 'error' : previous?.error,
+        textDraft,
+        attachmentDraft,
       };
       if (
         !activityPublished &&
@@ -332,13 +369,14 @@ export function createHostAdapter(ctx, options = {}) {
         next.attachmentOnly === previous.attachmentOnly &&
         next.ready === previous.ready &&
         next.error === previous.error &&
-        next.draft === previous.draft
+        next.textDraft === previous.textDraft &&
+        next.attachmentDraft === previous.attachmentDraft
       ) return;
       cache.set(id, next);
       if (cache.size > 100) cache.delete(cache.keys().next().value);
       publish();
     };
-    const stops = [session.eventSource.subscribe(refresh), session.subscribe(refresh)];
+    const stops = includeHistory ? [session.eventSource.subscribe(refresh), session.subscribe(refresh)] : [];
     if (input) stops.push(input.subscribe(refresh));
     refresh();
     return () => { for (const stop of stops) stop(); };
@@ -347,7 +385,7 @@ export function createHostAdapter(ctx, options = {}) {
   function reconcile() {
     if (disposed) return;
     const snapshot = ctx.sessions.list.getSnapshot(), id = current(), at = clock();
-    syncCompletionState(snapshot, ctx.uiSession.sessionStatus.getSnapshot(), id, at);
+    syncCompletionState(snapshot, sessionStatus.getSnapshot(), id, at);
 
     const cleaned = history.filter(item => !isSubagent(snapshot, item));
     let historyChanged = cleaned.length !== history.length;
@@ -389,7 +427,7 @@ export function createHostAdapter(ctx, options = {}) {
 
   function onStatusChange() {
     if (disposed) return;
-    if (syncCompletionState(ctx.sessions.list.getSnapshot(), ctx.uiSession.sessionStatus.getSnapshot(), current(), clock())) {
+    if (syncCompletionState(ctx.sessions.list.getSnapshot(), sessionStatus.getSnapshot(), current(), clock())) {
       publish();
     }
   }
@@ -402,10 +440,13 @@ export function createHostAdapter(ctx, options = {}) {
   const stops = [
     ctx.sessions.list.subscribe(reconcile),
     ctx.sidebarRight.mounted.subscribe(reconcile),
-    ctx.uiSession.sessionStatus.subscribe(onStatusChange),
+    sessionStatus.subscribe(onStatusChange),
     ctx.workspaces.list.subscribe(publish),
     ctx.on('theme/change', publish),
   ];
+  if (readingReady) stops.push(readingReady.subscribe(() => {
+    if (!nativeReading && readingReady.getSnapshot()) onStatusChange();
+  }));
   if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
     window.addEventListener('focus', onForegroundChange);
     window.addEventListener('blur', onForegroundChange);
@@ -421,6 +462,13 @@ export function createHostAdapter(ctx, options = {}) {
   if (typeof localeService?.subscribe === 'function') stops.push(localeService.subscribe(publish));
   if (typeof ctx.on === 'function') stops.push(ctx.on('locale/change', publish));
   reconcile();
+
+  function cachedDraft(id, summary) {
+    const data = cache.get(id);
+    // On newer hosts the catalog reflects attachment removal even after the preview watcher is released.
+    const useInputAttachments = !readingReady || !summary?.retainedBy || (id === observedId && observedBinding);
+    return Boolean(data?.textDraft || (useInputAttachments && data?.attachmentDraft));
+  }
 
   return {
     current,
@@ -441,27 +489,25 @@ export function createHostAdapter(ctx, options = {}) {
         const id = topIds[i];
         const summary = byId[id];
         if (!summary || index.subagents.has(id) || excluded?.has(id)) continue;
-        if (id === activeCurrent || summary.blank !== true || cache.get(id)?.draft) {
+        if (id === activeCurrent || summary.blank !== true || summary.retainedBy?.draft > 0 || cachedDraft(id, summary)) {
           if (++count >= 2) return true;
         }
       }
       return false;
     },
-    candidates: () => candidates(
-      ctx.sessions.list.getSnapshot(),
-      ctx.workspaces.list.getSnapshot().archivedSessionIds || [],
-      history,
-      activeSession(),
-      [...cache].filter(([, row]) => row.draft).map(([id]) => id),
-      {
+    candidates() {
+      const snapshot = ctx.sessions.list.getSnapshot();
+      const draftIds = [...cache.keys()].filter(id => cachedDraft(id, snapshot.byId?.[id]));
+      return candidates(snapshot, ctx.workspaces.list.getSnapshot().archivedSessionIds || [], history, activeSession(), draftIds, {
         scope: getPrefs()?.scope,
         visitedAt: visitTimes,
-        statuses: ctx.uiSession.sessionStatus.getSnapshot(),
-        unreadIds: localUnread,
+        statuses: sessionStatus.getSnapshot(),
+        unreadIds: nativeReading ? undefined : localUnread,
+        childUnreadIds: nativeReading ? childUnread : undefined,
         completedAt,
         now: clock(),
-      },
-    ),
+      });
+    },
     exists: id => {
       const snapshot = ctx.sessions.list.getSnapshot();
       return Boolean(snapshot?.byId?.[id]) && !isSubagent(snapshot, id) && !(ctx.workspaces.list.getSnapshot().archivedSessionIds || []).includes(id);
@@ -469,15 +515,12 @@ export function createHostAdapter(ctx, options = {}) {
     theme: () => ctx.theme.getTheme().active.colorScheme === 'dark' ? 'dark' : 'light',
     row(id) {
       const snapshot = ctx.sessions.list.getSnapshot();
-      const statusMap = ctx.uiSession.sessionStatus.getSnapshot();
+      const statusMap = sessionStatus.getSnapshot();
       const summary = snapshot.byId[id], data = cache.get(id), nowAt = clock();
       const locale = resolveLocale(), copy = uiCopy(locale);
-      const rawMounted = current();
-      const fgId = foregroundViewedId(snapshot, rawMounted);
-      const ownUnread = Boolean(statusMap.get(id)?.completionUnread);
-      const effectiveStatus = aggregateSessionStatus(snapshot, statusMap, id, {
-        unread: localUnread.has(id) || (fgId !== id && ownUnread),
-      });
+      const effectiveStatus = aggregateSessionStatus(snapshot, statusMap, id, nativeReading
+        ? { childUnreadIds: childUnread }
+        : { unread: localUnread.has(id) || Boolean(statusMap.get(id)?.completionUnread && foregroundViewedId(snapshot, current()) !== id) });
       const effectiveUpdatedAt = Math.max(sessionTimestamp(summary?.updatedAt), completedAt.get(id) || 0) || summary?.updatedAt;
       const text = data?.attachmentOnly ? copy.sentAttachment : (data?.text || '');
       return {
@@ -486,11 +529,11 @@ export function createHostAdapter(ctx, options = {}) {
         workspaceName: sessionWorkspaceName(ctx.workspaces.list.getSnapshot(), id, summary, locale),
         text,
         placeholder: data?.error ? copy.inputError : data?.ready ? copy.inputEmpty : copy.inputLoading,
-        ...sessionPresentation(effectiveStatus, { ...summary, updatedAt: effectiveUpdatedAt }, data?.draft, nowAt, locale),
+        ...sessionPresentation(effectiveStatus, { updatedAt: effectiveUpdatedAt }, summary?.retainedBy?.draft > 0 || cachedDraft(id, summary), nowAt, locale),
       };
     },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
-    preview(ids) {
+    preview(ids, { includeHistory = true } = {}) {
       let active = true;
       const owners = [];
       const release = () => {
@@ -504,14 +547,14 @@ export function createHostAdapter(ctx, options = {}) {
         if (id === observedId && observedBinding) continue;
         let owner;
         try {
-          const reference = ctx.sessions.retain(id, { source: 'plugin:dsh-switcher' });
+          const reference = ctx.sessions.retain(id, { source: 'plugin:dsh-switcher', connection: includeHistory });
           owner = { reference }; owners.push(owner);
-          owner.stop = watch(reference.binding);
+          owner.stop = watch(reference.binding, includeHistory);
           reference.ready.catch(() => {
-            if (active && !disposed) { cache.set(id, { ...cache.get(id), error: true }); publish(); }
+            if (includeHistory && active && !disposed) { cache.set(id, { ...cache.get(id), error: true }); publish(); }
           });
         } catch {
-          cache.set(id, { ...cache.get(id), error: true });
+          if (includeHistory) cache.set(id, { ...cache.get(id), error: true });
         }
       }
       publish();
@@ -524,7 +567,7 @@ export function createHostAdapter(ctx, options = {}) {
       for (const stop of stops) stop();
       listeners.clear(); cache.clear();
       wasRunning.clear(); rawRunning.clear(); completedAt.clear(); prevStatusSnapshot.clear();
-      localUnread.clear(); seenHostUnread.clear(); knownIds.clear(); activeRawStatusIds.clear();
+      localUnread.clear(); childUnread.clear(); seenHostUnread.clear(); knownIds.clear(); activeRawStatusIds.clear();
       lastSnapshot = null; lastStatusMap = null;
     },
   };

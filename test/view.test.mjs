@@ -93,6 +93,8 @@ test('mountSwitcher switches cleanly across Status-First, B2, and Split editions
 
   const container = new env.Node();
   const ids = ['s1', 's2', 's3'];
+  const historyRequests = [];
+  let releases = 0;
   const host = {
     current: () => 's1',
     candidates: () => ids,
@@ -107,7 +109,10 @@ test('mountSwitcher switches cleanly across Status-First, B2, and Split editions
       placeholder: '还没有输入',
       ...sessionPresentation(id === 's2' ? { running: true } : {}, { updatedAt: Date.now() - 60000 }, false),
     }),
-    preview: () => () => {},
+    preview(_ids, { includeHistory }) {
+      historyRequests.push(includeHistory);
+      return () => { releases++; };
+    },
     subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     open() {},
   };
@@ -118,6 +123,7 @@ test('mountSwitcher switches cleanly across Status-First, B2, and Split editions
 
   const overlay = container.children[0];
   assert.equal(overlay.dataset.edition, 'kibutsu');
+  assert.deepEqual(historyRequests, [false]);
   assert.equal(overlay.dataset.motion, 'balanced');
   assert.equal(overlay.dataset.ink, 'crisp');
   assert.equal(overlay.dataset.lens, 'true');
@@ -144,6 +150,8 @@ test('mountSwitcher switches cleanly across Status-First, B2, and Split editions
   prefs.update({ edition: 'b2' });
   env.flushFrames();
   assert.equal(overlay.dataset.edition, 'b2');
+  assert.deepEqual(historyRequests, [false, true]);
+  assert.equal(releases, 1);
   cards = env.findAll(overlay, n => n.className === 'dsh-switcher-card');
   assert.equal(cards[0].children[0].className, 'dsh-switcher-project');
   assert.equal(env.findAll(overlay, n => n.className === 'dsh-switcher-excerpt').length, 3);
@@ -153,6 +161,7 @@ test('mountSwitcher switches cleanly across Status-First, B2, and Split editions
   prefs.update({ edition: 'split', motion: 'classic', ink: 'medium' });
   env.flushFrames();
   assert.equal(overlay.dataset.edition, 'split');
+  assert.deepEqual(historyRequests, [false, true]);
   assert.equal(overlay.dataset.motion, 'classic');
   assert.equal(overlay.dataset.ink, 'medium');
   assert.equal(overlay.dataset.lens, undefined);
@@ -171,6 +180,8 @@ test('mountSwitcher switches cleanly across Status-First, B2, and Split editions
   assert.equal(env.findAll(overlay, n => n.className === 'dsh-ws-chip').length, 3);
 
   sw.destroy();
+  assert.deepEqual(historyRequests, [false, true, false]);
+  assert.equal(releases, 3);
   assert.equal(container.children.length, 0);
 });
 

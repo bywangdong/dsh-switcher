@@ -50,6 +50,7 @@ export function createFivebeatMotion(initialMode = 'classic') {
   function pose(kind, seconds, phaseOffset = 0) {
     const still = isOff();
     const t = still ? .65 : seconds;
+    if (kind === 'failed') return padSlots([line(16, 7, 16, 18, 1, 2.5), dot(16, 24, 1, 3.4)]);
 
     if (mode === 'classic') {
       const breath = still ? .5 : (1 - Math.cos(t * tau / 3.4)) * .5;

@@ -146,20 +146,18 @@ export function rememberVisit(visitTimes, id, now = Date.now(), keepIds = null) 
 }
 
 export function readActivityState(raw) {
+  const readIds = ids => Array.isArray(ids)
+    ? [...new Set(ids.filter(id => typeof id === 'string' && id && id !== '__proto__' && id !== 'constructor' && id !== 'prototype'))].slice(0, 100)
+    : [];
   try {
     const value = JSON.parse(raw);
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return { activity: {}, unread: [] };
-    const activity = readVisitTimes(JSON.stringify(value.activity || {}));
-    const unread = Array.isArray(value.unread)
-      ? [...new Set(value.unread.filter(id => typeof id === 'string' && id && id !== '__proto__' && id !== 'constructor' && id !== 'prototype'))].slice(0, 100)
-      : [];
-    return { activity, unread };
+    return { activity: readVisitTimes(JSON.stringify(value?.activity)), unread: readIds(value?.unread), childUnread: readIds(value?.childUnread) };
   } catch {
-    return { activity: {}, unread: [] };
+    return { activity: {}, unread: [], childUnread: [] };
   }
 }
 
-export function serializeActivityState(activityMap, unreadSet, keepIds = null) {
+export function serializeActivityState(activityMap, unreadSet, keepIds = null, childUnread = []) {
   const allowed = keepIds ? new Set(keepIds) : null;
   const entries = [];
   const iter = activityMap instanceof Map ? activityMap.entries() : Object.entries(activityMap || {});
@@ -178,7 +176,7 @@ export function serializeActivityState(activityMap, unreadSet, keepIds = null) {
       if (unread.length >= 100) break;
     }
   }
-  return JSON.stringify({ activity, unread });
+  return JSON.stringify({ activity, unread, childUnread: [...childUnread].slice(0, 100) });
 }
 
 const ACTIVITY_EVENT_TYPES = new Set([
@@ -326,6 +324,7 @@ export function aggregateSessionStatus(snapshot, statuses, id, extra = {}) {
   let pendingInteraction = own?.pendingInteraction;
   let childRunning = false;
   let childUnread = false;
+  let failed = Boolean(own?.completionUnread && own.completionFailed);
   if (children) {
     const byId = snapshot?.byId;
     for (let i = 0; i < children.length; i++) {
@@ -333,14 +332,17 @@ export function aggregateSessionStatus(snapshot, statuses, id, extra = {}) {
       const childStatus = isMap ? statuses.get(childId) : statuses?.[childId];
       if (!pendingInteraction && childStatus?.pendingInteraction) pendingInteraction = childStatus.pendingInteraction;
       if ((childStatus?.running ?? byId?.[childId]?.running) === true) childRunning = true;
-      if (childStatus?.completionUnread) childUnread = true;
+      if (extra.childUnreadIds ? extra.childUnreadIds.has(childId) : childStatus?.completionUnread) {
+        childUnread = true;
+        if (childStatus?.completionFailed) failed = true;
+      }
     }
   }
   const running = Boolean((own?.running ?? summary?.running) || childRunning);
   const completionUnread = !running && Boolean(
     extra.unread !== undefined ? extra.unread : (own?.completionUnread || childUnread),
   );
-  return { running, pendingInteraction, completionUnread };
+  return { running, pendingInteraction, completionUnread, completionFailed: completionUnread && failed };
 }
 
 export function isSessionActive(status, summary, draft = false) {
@@ -359,14 +361,15 @@ export function candidates(snapshot, archived, history, current, draftIds = [], 
   if (!byId || !topIds.length) return [];
 
   const excluded = archived?.length ? new Set(archived) : null;
-  const drafts = draftIds?.length ? new Set(draftIds) : null;
+  const drafts = new Set(draftIds);
   const activeCurrent = resolveSessionTarget(snapshot, current);
   const available = [];
   for (let i = 0; i < topIds.length; i++) {
     const id = topIds[i];
     const summary = byId[id];
     if (!summary || excluded?.has(id) || index.subagents.has(id)) continue;
-    if (id === activeCurrent || summary.blank !== true || drafts?.has(id)) available.push(id);
+    if (summary.retainedBy?.draft > 0) drafts.add(id);
+    if (id === activeCurrent || summary.blank !== true || drafts.has(id)) available.push(id);
   }
   if (!available.length) return [];
 
@@ -411,9 +414,9 @@ export function candidates(snapshot, archived, history, current, draftIds = [], 
       snapshot,
       statusMap,
       id,
-      unreadSet ? { unread: unreadSet.has(id) || Boolean(ownStatus?.completionUnread) } : {},
+      unreadSet ? { unread: unreadSet.has(id) || Boolean(ownStatus?.completionUnread) } : { childUnreadIds: options?.childUnreadIds },
     );
-    if (isSessionActive(effective, byId[id], Boolean(drafts?.has(id)))) { hot.push(id); continue; }
+    if (isSessionActive(effective, byId[id], drafts.has(id))) { hot.push(id); continue; }
     const visited = visitMap ? sessionTimestamp(visitIsMap ? visitMap.get(id) : visitMap[id]) : 0;
     const touched = Math.max(updated.get(id) || 0, visited);
     if (touched > 0 && now - touched <= rule.windowMs) hot.push(id);
@@ -574,6 +577,9 @@ export function sessionPresentation(status, summary, draft = false, now = Date.n
   } else if (status?.running ?? summary?.running) {
     kind = 'running';
     label = shortLabel = en ? 'Running' : '运行中';
+  } else if (status?.completionUnread && status.completionFailed) {
+    kind = 'failed';
+    label = shortLabel = en ? 'Last turn failed' : '上轮失败';
   } else if (status?.completionUnread) {
     kind = 'unread';
     label = en ? 'New result available' : '有新结果';

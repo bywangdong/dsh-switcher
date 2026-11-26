@@ -9,6 +9,158 @@ function store(value) {
   return { getSnapshot: () => value, subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     set(next) { value = next; for (const fn of [...listeners]) fn(); }, get size() { return listeners.size; } };
 }
+
+function readingHost(rows, { mounted = 'a', ready = true, statuses = new Map(), projectionsBySession, activityStorage } = {}) {
+  const list = store({ phase: 'ready', ids: Object.keys(rows), byId: rows, projectionsBySession });
+  const readingReady = store(ready);
+  const sessionStatus = Object.assign(store(statuses), { readingReady });
+  const current = store(mounted);
+  const ctx = {
+    sessions: { list, binding: () => undefined },
+    sidebarRight: { mounted: current }, uiSession: { sessionStatus },
+    workspaces: { list: store({ items: [], archivedSessionIds: [] }) }, on: () => () => {},
+  };
+  const start = () => createHostAdapter(ctx, { activityStorage, readDwellMs: 0 });
+  return { ctx, list, readingReady, sessionStatus, current, start };
+}
+
+test('native reading baseline supersedes saved marks and follows manual read, unread, and failure on the same card', () => {
+  const old = '2000-01-01T00:00:00Z';
+  const stored = new Map([['dsh-switcher.activity.v1', JSON.stringify({ unread: ['b'] })]]);
+  const activityStorage = { getItem: key => stored.get(key), setItem: (key, value) => stored.set(key, value) };
+  const { start, readingReady, sessionStatus } = readingHost({
+    a: {}, c: { updatedAt: Date.now() }, d: { updatedAt: Date.now() }, b: { updatedAt: old },
+  }, { ready: false, activityStorage, statuses: new Map([['b', { completionUnread: false }]]) });
+  const host = start();
+  assert.equal(host.row('b').kind, 'unread');
+  let updates = 0;
+  host.subscribe(() => updates++);
+  readingReady.set(true);
+  assert.ok(updates > 0, 'a baseline can arrive without a new status Map');
+  assert.equal(host.row('b').kind, 'idle');
+  assert.ok(!host.candidates().includes('b'));
+
+  const mark = (id, unread, failed = false) => sessionStatus.set(new Map(sessionStatus.getSnapshot()).set(id,
+    { running: false, completionUnread: unread, completionFailed: failed }));
+  mark('a', true);
+  assert.equal(host.row('a').kind, 'unread', 'the foreground dwell must respect a manual unread mark');
+  mark('b', true);
+  assert.ok(host.candidates().includes('b'));
+  const beforeFailure = updates;
+  mark('b', true, true);
+  assert.ok(updates > beforeFailure);
+  assert.equal(host.row('b').shortLabel, '上轮失败');
+  assert.equal(host.row('b').kind, 'failed');
+  readingReady.set(false);
+  assert.equal(host.row('a').kind, 'unread', 'reconnection retains the last host-confirmed state');
+  mark('b', false);
+  readingReady.set(true);
+  assert.equal(host.row('b').kind, 'idle');
+  assert.ok(!host.candidates().includes('b'), 'manual marks are not new activity timestamps');
+  mark('a', false);
+  assert.equal(host.row('a').kind, 'idle');
+  host.destroy();
+  assert.equal(readingReady.size, 0);
+  const reloaded = start();
+  assert.equal(reloaded.row('b').kind, 'idle');
+  reloaded.destroy();
+});
+
+test('independent child reminders roll up to the parent and its own native unread mark survives dwell', () => {
+  const storage = new Map();
+  const { start, current, sessionStatus } = readingHost({ a: {}, parent: {} }, {
+    projectionsBySession: { parent: { values: { subagentCatalog: [{ id: 'child' }, { id: 'other' }] } } },
+    activityStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) },
+  });
+  const set = (id, status) => sessionStatus.set(new Map(sessionStatus.getSnapshot()).set(id, status));
+  let host = start();
+  set('other', { completionUnread: true });
+  set('child', { completionUnread: true, completionFailed: true });
+  assert.equal(host.row('parent').kind, 'failed');
+  set('child', { completionUnread: false });
+  assert.equal(host.row('parent').kind, 'unread', 'the other child still has an unread result');
+  set('parent', { completionUnread: true });
+  current.set('parent');
+  assert.equal(host.row('parent').kind, 'unread');
+  set('parent', { completionUnread: false });
+  current.set('a');
+  assert.equal(host.row('parent').kind, 'idle', 'the parent dwell dismissed the sticky child reminder');
+
+  set('child', { running: true, completionUnread: false });
+  set('child', { running: false, completionUnread: false });
+  assert.equal(host.row('parent').kind, 'unread', 'a catalog-only child completion can precede its host reading record');
+  host.destroy();
+  host = start();
+  set('other', { completionUnread: false });
+  assert.equal(host.row('parent').kind, 'unread', 'the inferred child completion survived reload');
+  set('child', { completionUnread: true, completionFailed: true });
+  assert.equal(host.row('parent').kind, 'failed');
+  host.destroy();
+  set('child', { completionUnread: false });
+  host = start();
+  assert.equal(host.row('parent').kind, 'idle', 'a host-confirmed child marked read while closed is not resurrected');
+  host.destroy();
+});
+
+test('an unvisited blank attachment draft enables switching and disappears when its catalog hold ends', () => {
+  const { start, ctx, list } = readingHost({ a: {}, upload: { blank: true, retainedBy: { draft: 1 } } });
+  const input = store({ draft: '', attachmentIds: ['file'] });
+  ctx.conversation = { input: { for: () => ({ state: input }) } };
+  let retains = 0;
+  ctx.sessions.retain = (id, options) => {
+    retains++;
+    assert.equal(options.connection, false);
+    return { binding: { sessionId: id, ctx: {}, session: {} }, ready: Promise.resolve(), release() {} };
+  };
+  const host = start();
+  assert.equal(host.canPreview(), true);
+  assert.deepEqual(host.candidates(), ['a', 'upload']);
+  assert.equal(host.row('upload').kind, 'draft');
+  assert.equal(retains, 0);
+  const close = host.preview(['upload'], { includeHistory: false });
+  close();
+  assert.equal(input.size, 0);
+  const withoutHold = { blank: true, retainedBy: {} };
+  list.set({ ...list.getSnapshot(), byId: { a: {}, upload: withoutHold } });
+  assert.equal(host.canPreview(), false);
+  assert.deepEqual(host.candidates(), ['a']);
+  assert.equal(host.row('upload').draft, false);
+  const preview = host.preview(['upload'], { includeHistory: false });
+  input.set({ draft: '文字草稿', attachmentIds: [] });
+  assert.equal(host.canPreview(), true);
+  assert.equal(host.row('upload').kind, 'draft');
+  preview();
+  host.destroy();
+});
+
+test('status-only previews read drafts without connecting to or scanning four cold conversation histories', () => {
+  const ids = ['b', 'c', 'd', 'e'];
+  const { start, ctx } = readingHost(Object.fromEntries(['a', ...ids].map(id => [id, {}])));
+  const input = store({ draft: 'Draft', attachmentIds: [] });
+  ctx.conversation = { input: { for: () => ({ state: input }) } };
+  const entries = Array.from({ length: 10_000 }, () => ({ event: { type: 'assistant/message' } }));
+  entries.push({ event: { type: 'user/message', data: { content: 'Latest prompt' } } });
+  const events = store({ get entries() { scans++; return entries; } });
+  let connections = 0, scans = 0, releases = 0;
+  ctx.sessions.retain = (id, options) => {
+    if (options.connection !== false) connections++;
+    return {
+      binding: { sessionId: id, ctx: {}, session: Object.assign(store({ openState: 'open' }), { eventSource: events }) },
+      ready: Promise.resolve(), release() { releases++; },
+    };
+  };
+  const host = start();
+  const light = host.preview(ids, { includeHistory: false });
+  assert.equal(host.row('b').kind, 'draft');
+  assert.deepEqual([connections, scans, events.size], [0, 0, 0]);
+  const full = host.preview(ids, { includeHistory: true });
+  light();
+  assert.deepEqual([connections, scans, events.size], [4, 4, 4]);
+  assert.equal(host.row('b').text, 'Latest prompt');
+  full(); host.destroy();
+  assert.deepEqual([events.size, input.size, releases], [0, 0, 8]);
+});
+
 test('host observes real sources, retains only preview candidates, and releases on close/unload', async () => {
   const storage = new Map(); globalThis.sessionStorage = { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) };
   const events = store({ entries: [{ event: { type: 'user/message', data: { content: [{ type: 'text', text: '实际输入' }] } } }] });

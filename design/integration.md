@@ -1,6 +1,6 @@
 # DSH 适配与验证
 
-目标宿主：安装的 DeepSeek Harness 0.2.1-rc.2。生产入口为 `src/plugin/client.js`，构建产物为 `lib/client.js`。
+最早的桌面验证使用 DeepSeek Harness 0.2.1-rc.2，本次适配核对 macOS 桌面版 0.2.3-alpha.2。生产入口为 `src/plugin/client.js`，构建产物为 `lib/client.js`。
 
 ## 公共服务边界
 
@@ -11,16 +11,22 @@
 | 当前会话 | `sidebarRight.mounted` |
 | 项目名称与归属 | `workspaces.list.items[].title / sessionIds`；未分组回退 `sessions.list.byId[id].cwd` 目录名 |
 | 归档排除 | `workspaces.list.archivedSessionIds` |
-| 运行、等待用户、未读结果 | `uiSession.sessionStatus` |
+| 运行、等待用户、未读结果 | `uiSession.sessionStatus`。DSH 0.2.3 的 `readingReady` 首次就绪后，普通会话跟随宿主的 `completionUnread` 与 `completionFailed`。旧宿主及子代理汇总提醒保留本地驻留消读。 |
 | 最新用户输入 | 保留的 Session `eventSource` 中最后一条人类 `user/message` |
-| 草稿 | `conversation.input.for(binding.ctx).state`，只读 |
+| 草稿 | 输入框的 `draft` 与 `attachmentIds`，以及列表中尚未预览会话的 `retainedBy.draft` |
 | 切换动作 | `uiWorkspace.openSession(id)` |
 | 桌面快捷键 | 主文档捕获 `keydown` / `keyup`，同一事件链处理完整手势 |
 | 浮层 | `slots` 的 `shell.overlay` |
 | 插件详情页配置面板 | `slots` 的 `plugins.bundle.config`（`key: 'dsh-switcher'`），偏好存本机 `localStorage`（`dsh-switcher.prefs.v1`） |
 | 明暗主题 | `theme.getTheme()` 与 `theme/change` |
 
-只保留预览中的会话；当前会话借用宿主引用。关闭和卸载释放自己的引用，不释放宿主引用。候选顺序在一次切换期间冻结，实时更新标题和状态；删除或归档候选会取消当前切换。
+当前会话借用宿主引用。浮层显示后，四款状态优先版式以 `connection: false` 读取其他候选的草稿，B2 和分签连接历史以显示最后输入。关闭或卸载时释放预览引用。一次切换期间候选顺序冻结，标题和状态实时更新。删除或归档候选会取消当前切换。
+
+## 0.1.14-dev.10 验证（2026-11-26）
+
+- 适配层回归覆盖宿主手动标记、失败状态单独变化、子代理提醒和未预览的纯附件草稿。四个各含一万条历史消息的模拟候选在状态优先版式中产生零次历史连接或扫描，显示最后输入时各连接和扫描一次。
+- 浏览器样例验证了六款版式在亮暗主题、1280px 和 480px 窗口下的中英文失败标签、图标颜色及可访问名称。
+- macOS 日常 DSH 运行期间通过桌面自带的 CLI 更新插件，安装目录七个文件与安装包逐字节一致。在原窗口的 Switcher 详情页切换示例状态，实际读到 `Last turn failed`。当时详情页版本栏仍显示 `dev.9`，退回原会话后其后台任务继续运行。
 
 ## 松键问题与当前边界
 

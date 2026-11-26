@@ -17,6 +17,7 @@
   --sw-selected-cap: rgb(33 41 53 / .04);
   --sw-project: #565d67; --sw-note: #626975;
   --sw-blue: #2c52cf; --sw-amber: #8f5608; --sw-running: #16794b; --sw-opaque: #f1f3f5;
+  --sw-failed: #a03436;
   --sw-fresh-ink: #0d758f; --sw-fresh-icon: #0d758f;
   --sw-warm-ink: #336675; --sw-warm-icon: #3c6e7d;
   --sw-today-ink: #5e6673; --sw-today-icon: #6f7784;
@@ -44,6 +45,7 @@
   --sw-selected-cap: rgb(255 255 255 / .035);
   --sw-project: #c2c6ce; --sw-note: #a9afb9;
   --sw-blue: #86a6ff; --sw-amber: #e8b262; --sw-running: #57c98f; --sw-opaque: #212225;
+  --sw-failed: #ff9b97;
   --sw-fresh-ink: #56cbe3; --sw-fresh-icon: #56cbe3;
   --sw-warm-ink: #9bc2d1; --sw-warm-icon: #8bb3c2;
   --sw-today-ink: #929aa7; --sw-today-icon: #838b98;
@@ -264,6 +266,7 @@
 .dsh-switcher:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun]) .dsh-switcher-icon[data-status=approval] {
   color: var(--sw-amber);
 }
+.dsh-switcher[data-edition] :is(.dsh-switcher-status, .dsh-switcher-icon)[data-status=failed] { color: var(--sw-failed); }
 .dsh-switcher:is([data-edition=kibutsu], [data-edition=sujian], [data-edition=jiechi], [data-edition=moyun]) .dsh-switcher-status:not([data-status=idle]) .dsh-switcher-status-label {
   font-weight: 500;
 }
@@ -301,7 +304,7 @@
   transition: opacity .2s ease-out, transform .24s cubic-bezier(.2, .8, .2, 1);
 }
 .dsh-switcher[data-edition=kibutsu] .dsh-pulse-dot { display: block; }
-.dsh-switcher[data-edition=kibutsu] .dsh-switcher-status:is([data-status=running], [data-status=approval], [data-status=unread]) .dsh-pulse-dot {
+.dsh-switcher[data-edition=kibutsu] .dsh-switcher-status:is([data-status=running], [data-status=approval], [data-status=unread], [data-status=failed]) .dsh-pulse-dot {
   opacity: .85; transform: none;
 }
 @keyframes dsh-dot-pulse {

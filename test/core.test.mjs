@@ -370,8 +370,9 @@ test('bilingual zh/en localization covers relative time, statuses, plan-review, 
   assert.deepEqual(readActivityState(serialized), {
     activity: { b: 1700000009000, a: 1700000005000 },
     unread: ['b'],
+    childUnread: [],
   });
-  assert.deepEqual(readActivityState('{bad'), { activity: {}, unread: [] });
+  assert.deepEqual(readActivityState('{bad'), { activity: {}, unread: [], childUnread: [] });
   assert.equal(latestActivityTimestamp([
     { event: { type: 'user/message', time: 1700000001000, data: { source: { kind: 'schedule' } } } },
     { event: { type: 'assistant/message', time: 1700000008000, data: {} } },
@@ -418,7 +419,7 @@ test('subagent status rolls up onto parent session and keeps hot working set pin
   // Subagent running rolls up to parent.
   assert.deepEqual(
     aggregateSessionStatus(snapshot, new Map([['subCatalogOnly', { running: true }]]), 'parentOld'),
-    { running: true, pendingInteraction: undefined, completionUnread: false },
+    { running: true, pendingInteraction: undefined, completionUnread: false, completionFailed: false },
   );
 
   // Subagent approval + completionUnread roll up cleanly when parent is idle.
@@ -427,7 +428,7 @@ test('subagent status rolls up onto parent session and keeps hot working set pin
       ['subInById', { pendingInteraction: { kind: 'approval' } }],
       ['subCatalogOnly', { completionUnread: true }],
     ]), 'parentOld'),
-    { running: false, pendingInteraction: { kind: 'approval' }, completionUnread: true },
+    { running: false, pendingInteraction: { kind: 'approval' }, completionUnread: true, completionFailed: false },
   );
 
   // Subagent unread keeps an otherwise 10h-old parent pinned in the 2h hot working set.

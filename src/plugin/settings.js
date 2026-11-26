@@ -138,7 +138,7 @@ export function mountSettingsPanel(container, options = {}) {
       kind: 'idle', draft: false, updatedAt: new Date(now - 5 * 3600000).toISOString(),
     },
   ];
-  const sampleCycleStates = ['running', 'approval', 'unread'];
+  const sampleCycleStates = ['running', 'approval', 'unread', 'failed'];
   let sampleStateIndex = 0;
   const previewListeners = new Set();
   const notifyPreview = () => { for (const fn of [...previewListeners]) fn(); };
@@ -151,7 +151,8 @@ export function mountSettingsPanel(container, options = {}) {
 
   const sampleStatusOf = item => ({
     running: item.kind === 'running',
-    completionUnread: item.kind === 'unread',
+    completionUnread: item.kind === 'unread' || item.kind === 'failed',
+    completionFailed: item.kind === 'failed',
     pendingInteraction: item.kind === 'approval' ? { kind: 'approval' } : undefined,
   });
   const sampleSnapshot = {
